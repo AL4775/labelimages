@@ -6,7 +6,7 @@ from PIL import Image, ImageTk
 from datetime import datetime
 import re
 
-LABELS = ["no label", "no read", "unreadable"]
+LABELS = ["unlabeled", "no label", "no read", "unreadable"]
 
 class ImageLabelTool:
     def __init__(self, root):
@@ -50,7 +50,7 @@ class ImageLabelTool:
         filter_frame.grid(row=2, column=0, columnspan=3, pady=5)
         tk.Label(filter_frame, text="Filter:", bg="#f0f0f0", font=("Arial", 10)).pack(side=tk.LEFT)
         self.filter_var = tk.StringVar(value="All images")
-        filter_options = ["All images", "no label only", "no read only", "unreadable only"]
+        filter_options = ["All images", "unlabeled only", "no label only", "no read only", "unreadable only"]
         self.filter_menu = tk.OptionMenu(filter_frame, self.filter_var, *filter_options, command=self.on_filter_changed)
         self.filter_menu.config(bg="#e0e0e0", font=("Arial", 10), relief="solid", bd=1)
         self.filter_menu.pack(side=tk.LEFT, padx=(5, 0))
@@ -129,7 +129,12 @@ class ImageLabelTool:
         label_frame = tk.Frame(frame, bg="#f0f0f0", relief="solid", bd=1, padx=10, pady=5)
         label_frame.grid(row=6, column=0, columnspan=3, pady=5)
         
-        label_colors = {"no label": "#FFB74D", "no read": "#F06292", "unreadable": "#BA68C8"}
+        label_colors = {
+            "unlabeled": "#E0E0E0", 
+            "no label": "#FFB74D", 
+            "no read": "#F06292", 
+            "unreadable": "#BA68C8"
+        }
         for i, label in enumerate(LABELS):
             rb = tk.Radiobutton(label_frame, text=label, variable=self.label_var, 
                               value=label, command=self.set_label_radio,
@@ -349,6 +354,7 @@ class ImageLabelTool:
         else:
             # Map filter names to label values
             filter_map = {
+                "unlabeled only": "unlabeled",
                 "no label only": "no label",
                 "no read only": "no read", 
                 "unreadable only": "unreadable"
@@ -438,7 +444,7 @@ class ImageLabelTool:
             return
         
         total_images = len(self.all_image_paths)
-        labeled_images = len([path for path in self.all_image_paths if path in self.labels and self.labels[path] != "no label"])
+        labeled_images = len([path for path in self.all_image_paths if path in self.labels and self.labels[path] != "unlabeled"])
         unlabeled_images = total_images - labeled_images
         
         progress_text = f"Progress: {labeled_images}/{total_images} labeled ({unlabeled_images} remaining)"
@@ -451,7 +457,7 @@ class ImageLabelTool:
             return
         
         current_path = self.image_paths[self.current_index]
-        if current_path in self.labels and self.labels[current_path] != "no label":
+        if current_path in self.labels and self.labels[current_path] != "unlabeled":
             # Image has been labeled
             self.label_status_var.set("✓ LABELED")
             self.label_status_label.config(fg="#4CAF50")  # Green
@@ -499,11 +505,11 @@ class ImageLabelTool:
             if "no read" in parcel_image_labels:
                 # If at least one image is "no read", parcel is "no read"
                 parcel_labels_dict[parcel_id] = "no read"
-            elif all(label == "no label" for label in parcel_image_labels):
-                # If all images are "no label", parcel is "no label"
+            elif all(label in ["unlabeled", "no label"] for label in parcel_image_labels):
+                # If all images are "unlabeled" or "no label", parcel is "no label"
                 parcel_labels_dict[parcel_id] = "no label"
             else:
-                # Mix of "no label" and "unreadable", parcel is "unreadable"
+                # Mix of labeled images (including "unreadable"), parcel is "unreadable"
                 parcel_labels_dict[parcel_id] = "unreadable"
                 
         return parcel_labels_dict
