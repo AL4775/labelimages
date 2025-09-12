@@ -142,20 +142,36 @@ class ImageLabelTool:
                              font=("Arial", 11), fg="#333333")
         self.status.grid(row=7, column=0, columnspan=3)
 
+        # Progress and label status frame
+        progress_frame = tk.Frame(frame, bg="#f0f0f0")
+        progress_frame.grid(row=8, column=0, columnspan=3, pady=5)
+        
+        # Progress counter (labeled vs total)
+        self.progress_var = tk.StringVar()
+        self.progress_label = tk.Label(progress_frame, textvariable=self.progress_var, bg="#f0f0f0",
+                                     font=("Arial", 10, "bold"), fg="#1976D2")
+        self.progress_label.pack(side=tk.LEFT, padx=(0, 20))
+        
+        # Current image label status
+        self.label_status_var = tk.StringVar()
+        self.label_status_label = tk.Label(progress_frame, textvariable=self.label_status_var, bg="#f0f0f0",
+                                         font=("Arial", 10, "bold"))
+        self.label_status_label.pack(side=tk.LEFT)
+
         self.count_var = tk.StringVar()
         self.count_label = tk.Label(frame, textvariable=self.count_var, bg="#f0f0f0",
                                   font=("Arial", 10), fg="#666666")
-        self.count_label.grid(row=8, column=0, columnspan=3)
+        self.count_label.grid(row=9, column=0, columnspan=3)
 
         self.parcel_count_var = tk.StringVar()
         self.parcel_count_label = tk.Label(frame, textvariable=self.parcel_count_var, 
                                          font=("Arial", 10, "bold"), bg="#f0f0f0", fg="#4CAF50")
-        self.parcel_count_label.grid(row=9, column=0, columnspan=3, pady=(5, 0))
+        self.parcel_count_label.grid(row=10, column=0, columnspan=3, pady=(5, 0))
 
         self.parcel_stats_var = tk.StringVar()
         self.parcel_stats_label = tk.Label(frame, textvariable=self.parcel_stats_var, 
                                          font=("Arial", 10, "bold"), fg="#1976D2", bg="#f0f0f0")
-        self.parcel_stats_label.grid(row=10, column=0, columnspan=3, pady=(5, 0))
+        self.parcel_stats_label.grid(row=11, column=0, columnspan=3, pady=(5, 0))
 
         # Bind window resize event to update image display
         self.root.bind('<Configure>', self.on_window_resize)
@@ -267,6 +283,10 @@ class ImageLabelTool:
         label = self.labels.get(path, LABELS[0])
         self.label_var.set(label)
         self.status_var.set(f"{os.path.basename(path)} ({self.current_index+1}/{len(self.image_paths)}) - {original_width}x{original_height}px")
+        
+        # Update progress and label status
+        self.update_progress_display()
+        self.update_current_label_status()
 
     def prev_image(self):
         if self.current_index > 0:
@@ -295,6 +315,8 @@ class ImageLabelTool:
         self.update_counts()
         self.update_parcel_stats()
         self.update_total_stats()
+        self.update_progress_display()
+        self.update_current_label_status()
         
         # If filtering is active, reapply filter in case current image no longer matches
         if self.filter_var.get() != "All images":
@@ -345,6 +367,7 @@ class ImageLabelTool:
         self.update_counts()
         self.update_parcel_stats()
         self.update_total_stats()
+        self.update_progress_display()
 
     def load_csv(self):
         if not self.csv_filename or not os.path.exists(self.csv_filename):
@@ -407,6 +430,35 @@ class ImageLabelTool:
             if label in counts:
                 counts[label] += 1
         self.count_var.set("Images: " + ", ".join(f"{label}: {counts[label]}" for label in LABELS))
+
+    def update_progress_display(self):
+        """Update the progress counter showing labeled vs total images"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            self.progress_var.set("")
+            return
+        
+        total_images = len(self.all_image_paths)
+        labeled_images = len([path for path in self.all_image_paths if path in self.labels and self.labels[path] != "no label"])
+        unlabeled_images = total_images - labeled_images
+        
+        progress_text = f"Progress: {labeled_images}/{total_images} labeled ({unlabeled_images} remaining)"
+        self.progress_var.set(progress_text)
+
+    def update_current_label_status(self):
+        """Update the current image label status indicator"""
+        if not self.image_paths:
+            self.label_status_var.set("")
+            return
+        
+        current_path = self.image_paths[self.current_index]
+        if current_path in self.labels and self.labels[current_path] != "no label":
+            # Image has been labeled
+            self.label_status_var.set("✓ LABELED")
+            self.label_status_label.config(fg="#4CAF50")  # Green
+        else:
+            # Image is unlabeled
+            self.label_status_var.set("○ UNLABELED")
+            self.label_status_label.config(fg="#F44336")  # Red
 
     def get_parcel_number(self, image_path):
         """Extract the parcel identifier from the image filename - first part before the first underscore"""
