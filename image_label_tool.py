@@ -12,7 +12,7 @@ class ImageLabelTool:
     def __init__(self, root):
         self.root = root
         self.root.title("Image Label Tool")
-        self.root.configure(bg="#f0f0f0")  # Light gray background
+        self.root.configure(bg="#FAFAFA")  # Very light gray background
         self.root.minsize(600, 700)  # Set minimum window size
         self.image_paths = []
         self.current_index = 0
@@ -27,18 +27,18 @@ class ImageLabelTool:
         self.setup_ui()
 
     def setup_ui(self):
-        frame = tk.Frame(self.root, bg="#f0f0f0", padx=20, pady=20)
+        frame = tk.Frame(self.root, bg="#FAFAFA", padx=20, pady=20)
         frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         self.btn_select = tk.Button(frame, text="Select Folder", command=self.select_folder,
-                                  bg="#4CAF50", fg="white", font=("Arial", 12, "bold"),
+                                  bg="#A5D6A7", fg="white", font=("Arial", 12, "bold"),
                                   padx=20, pady=8, relief="flat")
         self.btn_select.grid(row=0, column=0, columnspan=3, pady=5)
 
         # Total parcels input
-        total_frame = tk.Frame(frame, bg="#f0f0f0")
+        total_frame = tk.Frame(frame, bg="#FAFAFA")
         total_frame.grid(row=1, column=0, columnspan=3, pady=5)
-        tk.Label(total_frame, text="Total Parcels:", bg="#f0f0f0", font=("Arial", 10)).pack(side=tk.LEFT)
+        tk.Label(total_frame, text="Total Parcels:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
         self.total_parcels_var = tk.StringVar()
         self.total_parcels_entry = tk.Entry(total_frame, textvariable=self.total_parcels_var, width=10,
                                           font=("Arial", 10), bg="white", relief="solid", bd=1)
@@ -46,21 +46,21 @@ class ImageLabelTool:
         self.total_parcels_entry.bind('<KeyRelease>', self.on_total_changed)
 
         # Filter dropdown
-        filter_frame = tk.Frame(frame, bg="#f0f0f0")
+        filter_frame = tk.Frame(frame, bg="#FAFAFA")
         filter_frame.grid(row=2, column=0, columnspan=3, pady=5)
-        tk.Label(filter_frame, text="Filter:", bg="#f0f0f0", font=("Arial", 10)).pack(side=tk.LEFT)
+        tk.Label(filter_frame, text="Filter:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
         self.filter_var = tk.StringVar(value="All images")
         filter_options = ["All images", "unlabeled only", "no label only", "no read only", "unreadable only"]
         self.filter_menu = tk.OptionMenu(filter_frame, self.filter_var, *filter_options, command=self.on_filter_changed)
-        self.filter_menu.config(bg="#e0e0e0", font=("Arial", 10), relief="solid", bd=1)
+        self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
         self.filter_menu.pack(side=tk.LEFT, padx=(5, 0))
 
         # Create a frame for the image display with scrollbars
-        image_frame = tk.Frame(frame, bg="#f0f0f0")
+        image_frame = tk.Frame(frame, bg="#FAFAFA")
         image_frame.grid(row=3, column=0, columnspan=3, sticky="nsew", pady=10)
         
         # Create canvas with scrollbars for image display
-        self.canvas = tk.Canvas(image_frame, bg="#f0f0f0", relief="solid", bd=2)
+        self.canvas = tk.Canvas(image_frame, bg="#FAFAFA", relief="solid", bd=2)
         
         # Scrollbars
         self.h_scrollbar = tk.Scrollbar(image_frame, orient="horizontal", command=self.canvas.xview)
@@ -88,52 +88,52 @@ class ImageLabelTool:
         frame.grid_columnconfigure(2, weight=1)
 
         self.btn_prev = tk.Button(frame, text="<< Prev", command=self.prev_image,
-                                bg="#2196F3", fg="white", font=("Arial", 11, "bold"),
+                                bg="#90CAF9", fg="white", font=("Arial", 11, "bold"),
                                 padx=15, pady=5, relief="flat")
         self.btn_prev.grid(row=4, column=0, pady=5)
         self.btn_next = tk.Button(frame, text="Next >>", command=self.next_image,
-                                bg="#2196F3", fg="white", font=("Arial", 11, "bold"),
+                                bg="#90CAF9", fg="white", font=("Arial", 11, "bold"),
                                 padx=15, pady=5, relief="flat")
         self.btn_next.grid(row=4, column=2, pady=5)
 
         # Scale control frame
-        scale_frame = tk.Frame(frame, bg="#f0f0f0")
+        scale_frame = tk.Frame(frame, bg="#FAFAFA")
         scale_frame.grid(row=5, column=0, columnspan=3, pady=5)
         
         self.scale_info_var = tk.StringVar()
         self.scale_info_label = tk.Label(scale_frame, textvariable=self.scale_info_var, 
-                                       bg="#f0f0f0", font=("Arial", 10), fg="#666666")
+                                       bg="#FAFAFA", font=("Arial", 10), fg="#757575")
         self.scale_info_label.pack(side=tk.LEFT, padx=(0, 10))
         
         self.btn_1to1 = tk.Button(scale_frame, text="1:1 Scale", command=self.toggle_1to1_scale,
-                                bg="#FF9800", fg="white", font=("Arial", 10, "bold"),
+                                bg="#FFCC80", fg="white", font=("Arial", 10, "bold"),
                                 padx=10, pady=3, relief="flat")
         self.btn_1to1.pack(side=tk.LEFT)
         
         # Zoom controls
-        zoom_frame = tk.Frame(scale_frame, bg="#f0f0f0")
+        zoom_frame = tk.Frame(scale_frame, bg="#FAFAFA")
         zoom_frame.pack(side=tk.LEFT, padx=(20, 0))
         
         self.btn_zoom_out = tk.Button(zoom_frame, text="−", command=self.zoom_out,
-                                    bg="#9C27B0", fg="white", font=("Arial", 12, "bold"),
+                                    bg="#CE93D8", fg="white", font=("Arial", 12, "bold"),
                                     padx=8, pady=2, relief="flat", width=3)
         self.btn_zoom_out.pack(side=tk.LEFT, padx=(0, 2))
         
         self.btn_zoom_in = tk.Button(zoom_frame, text="+", command=self.zoom_in,
-                                   bg="#9C27B0", fg="white", font=("Arial", 12, "bold"),
+                                   bg="#CE93D8", fg="white", font=("Arial", 12, "bold"),
                                    padx=8, pady=2, relief="flat", width=3)
         self.btn_zoom_in.pack(side=tk.LEFT)
 
         # Radio buttons for labels
         self.label_var = tk.StringVar(value=LABELS[0])
-        label_frame = tk.Frame(frame, bg="#f0f0f0", relief="solid", bd=1, padx=10, pady=5)
+        label_frame = tk.Frame(frame, bg="#FAFAFA", relief="solid", bd=1, padx=10, pady=5)
         label_frame.grid(row=6, column=0, columnspan=3, pady=5)
         
         label_colors = {
-            "unlabeled": "#E0E0E0", 
-            "no label": "#FFB74D", 
-            "no read": "#F06292", 
-            "unreadable": "#BA68C8"
+            "unlabeled": "#F5F5F5", 
+            "no label": "#FFF3E0", 
+            "no read": "#FCE4EC", 
+            "unreadable": "#F3E5F5"
         }
         for i, label in enumerate(LABELS):
             rb = tk.Radiobutton(label_frame, text=label, variable=self.label_var, 
@@ -143,39 +143,39 @@ class ImageLabelTool:
             rb.grid(row=0, column=i, padx=10)
 
         self.status_var = tk.StringVar()
-        self.status = tk.Label(frame, textvariable=self.status_var, bg="#f0f0f0", 
-                             font=("Arial", 11), fg="#333333")
+        self.status = tk.Label(frame, textvariable=self.status_var, bg="#FAFAFA", 
+                             font=("Arial", 11), fg="#424242")
         self.status.grid(row=7, column=0, columnspan=3)
 
         # Progress and label status frame
-        progress_frame = tk.Frame(frame, bg="#f0f0f0")
+        progress_frame = tk.Frame(frame, bg="#FAFAFA")
         progress_frame.grid(row=8, column=0, columnspan=3, pady=5)
         
         # Progress counter (labeled vs total)
         self.progress_var = tk.StringVar()
-        self.progress_label = tk.Label(progress_frame, textvariable=self.progress_var, bg="#f0f0f0",
-                                     font=("Arial", 10, "bold"), fg="#1976D2")
+        self.progress_label = tk.Label(progress_frame, textvariable=self.progress_var, bg="#FAFAFA",
+                                     font=("Arial", 10, "bold"), fg="#5E88D8")
         self.progress_label.pack(side=tk.LEFT, padx=(0, 20))
         
         # Current image label status
         self.label_status_var = tk.StringVar()
-        self.label_status_label = tk.Label(progress_frame, textvariable=self.label_status_var, bg="#f0f0f0",
+        self.label_status_label = tk.Label(progress_frame, textvariable=self.label_status_var, bg="#FAFAFA",
                                          font=("Arial", 10, "bold"))
         self.label_status_label.pack(side=tk.LEFT)
 
         self.count_var = tk.StringVar()
-        self.count_label = tk.Label(frame, textvariable=self.count_var, bg="#f0f0f0",
-                                  font=("Arial", 10), fg="#666666")
+        self.count_label = tk.Label(frame, textvariable=self.count_var, bg="#FAFAFA",
+                                  font=("Arial", 10), fg="#757575")
         self.count_label.grid(row=9, column=0, columnspan=3)
 
         self.parcel_count_var = tk.StringVar()
         self.parcel_count_label = tk.Label(frame, textvariable=self.parcel_count_var, 
-                                         font=("Arial", 10, "bold"), bg="#f0f0f0", fg="#4CAF50")
+                                         font=("Arial", 10, "bold"), bg="#FAFAFA", fg="#81C784")
         self.parcel_count_label.grid(row=10, column=0, columnspan=3, pady=(5, 0))
 
         self.parcel_stats_var = tk.StringVar()
         self.parcel_stats_label = tk.Label(frame, textvariable=self.parcel_stats_var, 
-                                         font=("Arial", 10, "bold"), fg="#1976D2", bg="#f0f0f0")
+                                         font=("Arial", 10, "bold"), fg="#5E88D8", bg="#FAFAFA")
         self.parcel_stats_label.grid(row=11, column=0, columnspan=3, pady=(5, 0))
 
         # Bind window resize event to update image display
@@ -460,11 +460,11 @@ class ImageLabelTool:
         if current_path in self.labels and self.labels[current_path] != "unlabeled":
             # Image has been labeled
             self.label_status_var.set("✓ LABELED")
-            self.label_status_label.config(fg="#4CAF50")  # Green
+            self.label_status_label.config(fg="#81C784")  # Soft green
         else:
             # Image is unlabeled
             self.label_status_var.set("○ UNLABELED")
-            self.label_status_label.config(fg="#F44336")  # Red
+            self.label_status_label.config(fg="#EF9A9A")  # Soft red
 
     def get_parcel_number(self, image_path):
         """Extract the parcel identifier from the image filename - first part before the first underscore"""
@@ -601,10 +601,10 @@ class ImageLabelTool:
         self.scale_1to1 = not self.scale_1to1
         
         if self.scale_1to1:
-            self.btn_1to1.config(text="Fit to Window", bg="#4CAF50")
+            self.btn_1to1.config(text="Fit to Window", bg="#A5D6A7")
             self.zoom_level = 1.0  # Reset zoom level when entering 1:1 mode
         else:
-            self.btn_1to1.config(text="1:1 Scale", bg="#FF9800")
+            self.btn_1to1.config(text="1:1 Scale", bg="#FFCC80")
         
         # Refresh the current image display
         if hasattr(self, 'image_paths') and self.image_paths:
