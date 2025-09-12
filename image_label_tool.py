@@ -21,6 +21,9 @@ class ImageLabelTool:
         self.csv_filename = None
         self.scale_1to1 = False  # Track if we're in 1:1 scale mode
         self.current_scale_factor = 1.0  # Track current scale factor
+        self.zoom_level = 1.0  # Track zoom level for manual zoom
+        self.pan_start_x = 0  # For mouse panning
+        self.pan_start_y = 0  # For mouse panning
         self.setup_ui()
 
     def setup_ui(self):
@@ -73,6 +76,11 @@ class ImageLabelTool:
         image_frame.grid_rowconfigure(0, weight=1)
         image_frame.grid_columnconfigure(0, weight=1)
 
+        # Bind mouse events for panning
+        self.canvas.bind("<Button-1>", self.start_pan)
+        self.canvas.bind("<B1-Motion>", self.do_pan)
+        self.canvas.bind("<MouseWheel>", self.mouse_wheel_zoom)
+
         # Configure grid weights to make canvas expand
         frame.grid_rowconfigure(3, weight=1)
         frame.grid_columnconfigure(0, weight=1)
@@ -101,6 +109,20 @@ class ImageLabelTool:
                                 bg="#FF9800", fg="white", font=("Arial", 10, "bold"),
                                 padx=10, pady=3, relief="flat")
         self.btn_1to1.pack(side=tk.LEFT)
+        
+        # Zoom controls
+        zoom_frame = tk.Frame(scale_frame, bg="#f0f0f0")
+        zoom_frame.pack(side=tk.LEFT, padx=(20, 0))
+        
+        self.btn_zoom_out = tk.Button(zoom_frame, text="−", command=self.zoom_out,
+                                    bg="#9C27B0", fg="white", font=("Arial", 12, "bold"),
+                                    padx=8, pady=2, relief="flat", width=3)
+        self.btn_zoom_out.pack(side=tk.LEFT, padx=(0, 2))
+        
+        self.btn_zoom_in = tk.Button(zoom_frame, text="+", command=self.zoom_in,
+                                   bg="#9C27B0", fg="white", font=("Arial", 12, "bold"),
+                                   padx=8, pady=2, relief="flat", width=3)
+        self.btn_zoom_in.pack(side=tk.LEFT)
 
         # Radio buttons for labels
         self.label_var = tk.StringVar(value=LABELS[0])
@@ -158,6 +180,7 @@ class ImageLabelTool:
         self.current_index = 0
         self.labels = {}  # Reset labels for new folder
         self.load_csv()  # Try to load existing CSV if any
+        self.auto_detect_total_groups()  # Auto-detect total groups from filenames
         self.apply_filter()  # Apply current filter to show appropriate images
 
     def show_image(self):
@@ -173,23 +196,31 @@ class ImageLabelTool:
         # Clear previous image
         self.canvas.delete("all")
         
+        # Get canvas dimensions
+        canvas_width = max(400, self.canvas.winfo_width())
+        canvas_height = max(300, self.canvas.winfo_height())
+        if canvas_width <= 1 or canvas_height <= 1:
+            canvas_width, canvas_height = 400, 400
+        
         if self.scale_1to1:
-            # Show image at 1:1 scale - no resizing
-            display_img = img
-            self.current_scale_factor = 1.0
-            scale_text = "Scale: 1:1 (100%)"
+            # Show image at 1:1 scale with current zoom level
+            scale_factor = self.zoom_level
+            new_width = int(original_width * scale_factor)
+            new_height = int(original_height * scale_factor)
             
-            # Configure canvas size and scrollable region
-            canvas_width = max(400, self.canvas.winfo_width())
-            canvas_height = max(300, self.canvas.winfo_height())
-            if canvas_width <= 1 or canvas_height <= 1:
-                canvas_width, canvas_height = 400, 400
+            if scale_factor != 1.0:
+                display_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            else:
+                display_img = img
+            
+            self.current_scale_factor = scale_factor
+            scale_text = f"Scale: {scale_factor:.2f} ({scale_factor*100:.1f}%)"
             
             # Set scroll region to image size
-            self.canvas.configure(scrollregion=(0, 0, original_width, original_height))
+            self.canvas.configure(scrollregion=(0, 0, new_width, new_height))
             
-            if original_width > canvas_width or original_height > canvas_height:
-                scale_text += " - Use scrollbars to pan"
+            if new_width > canvas_width or new_height > canvas_height:
+                scale_text += " - Use mouse to pan"
                 # Show scrollbars
                 self.h_scrollbar.grid(row=1, column=0, sticky="ew")
                 self.v_scrollbar.grid(row=0, column=1, sticky="ns")
@@ -198,18 +229,12 @@ class ImageLabelTool:
                 self.h_scrollbar.grid_remove()
                 self.v_scrollbar.grid_remove()
         else:
-            # Calculate available space for image display (fitted mode)
-            canvas_width = max(400, self.canvas.winfo_width())
-            canvas_height = max(300, self.canvas.winfo_height())
-            
-            if canvas_width <= 1 or canvas_height <= 1:
-                canvas_width, canvas_height = 400, 400
-            
-            # Calculate scale factor needed to fit image
+            # Calculate scale factor needed to fit image (fitted mode)
             scale_x = canvas_width / original_width
             scale_y = canvas_height / original_height
             scale_factor = min(scale_x, scale_y)
             self.current_scale_factor = scale_factor
+            self.zoom_level = scale_factor  # Sync zoom level with fitted scale
             
             # Resize image to fit available space while maintaining aspect ratio
             display_img = img.copy()
@@ -217,8 +242,9 @@ class ImageLabelTool:
             
             scale_text = f"Scale: {scale_factor:.2f} ({scale_factor*100:.1f}%)"
             
-            # Reset scroll region for fitted mode
-            self.canvas.configure(scrollregion=(0, 0, display_img.width, display_img.height))
+            # Reset scroll region for fitted mode and center the image
+            img_width, img_height = display_img.size
+            self.canvas.configure(scrollregion=(0, 0, canvas_width, canvas_height))
             # Hide scrollbars in fitted mode
             self.h_scrollbar.grid_remove()
             self.v_scrollbar.grid_remove()
@@ -227,7 +253,14 @@ class ImageLabelTool:
         
         # Center the image in the canvas
         img_width, img_height = display_img.size
-        self.canvas.create_image(img_width//2, img_height//2, anchor="center", image=self.tk_img)
+        if self.scale_1to1:
+            # For 1:1 mode, place image at origin for proper scrolling
+            self.canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
+        else:
+            # For fitted mode, center the image
+            center_x = canvas_width // 2
+            center_y = canvas_height // 2
+            self.canvas.create_image(center_x, center_y, anchor="center", image=self.tk_img)
         
         self.scale_info_var.set(scale_text)
         
@@ -376,18 +409,18 @@ class ImageLabelTool:
         self.count_var.set("Images: " + ", ".join(f"{label}: {counts[label]}" for label in LABELS))
 
     def get_parcel_number(self, image_path):
-        """Extract the parcel identifier from the image filename - everything after the 3rd underscore"""
+        """Extract the parcel identifier from the image filename - first part before the first underscore"""
         filename = os.path.basename(image_path)
         filename_without_ext = os.path.splitext(filename)[0]
         
-        # Split by underscore and get everything after the 3rd underscore
+        # Split by underscore and get the first part
         parts = filename_without_ext.split('_')
-        if len(parts) > 3:
-            # Join everything from index 3 onwards to form the parcel identifier
-            parcel_id = '_'.join(parts[3:])
+        if len(parts) > 0:
+            # Return the first part as the parcel identifier
+            parcel_id = parts[0]
             return parcel_id
         else:
-            # If less than 4 parts, use the entire filename as parcel id
+            # If no underscore, use the entire filename as parcel id
             return filename_without_ext
 
     def calculate_parcel_labels(self):
@@ -476,6 +509,28 @@ class ImageLabelTool:
         
         self.parcel_stats_var.set(stats_text)
 
+    def auto_detect_total_groups(self):
+        """Auto-detect total number of groups by finding the largest number in first filename parts"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            return
+        
+        max_group_number = 0
+        for path in self.all_image_paths:
+            parcel_id = self.get_parcel_number(path)
+            try:
+                # Try to convert the first part to a number
+                group_number = int(parcel_id)
+                max_group_number = max(max_group_number, group_number)
+            except ValueError:
+                # Skip non-numeric group identifiers
+                continue
+        
+        if max_group_number > 0:
+            # Set the total parcels field with the detected number
+            self.total_parcels_var.set(str(max_group_number))
+            # Update statistics immediately
+            self.update_total_stats()
+
     def on_window_resize(self, event):
         """Handle window resize events to update image display"""
         # Only respond to resize events from the main window
@@ -489,12 +544,41 @@ class ImageLabelTool:
         
         if self.scale_1to1:
             self.btn_1to1.config(text="Fit to Window", bg="#4CAF50")
+            self.zoom_level = 1.0  # Reset zoom level when entering 1:1 mode
         else:
             self.btn_1to1.config(text="1:1 Scale", bg="#FF9800")
         
         # Refresh the current image display
         if hasattr(self, 'image_paths') and self.image_paths:
             self.show_image()
+
+    def zoom_in(self):
+        """Increase zoom level"""
+        if self.scale_1to1:
+            self.zoom_level = min(self.zoom_level * 1.25, 5.0)  # Max 500% zoom
+            self.show_image()
+
+    def zoom_out(self):
+        """Decrease zoom level"""
+        if self.scale_1to1:
+            self.zoom_level = max(self.zoom_level / 1.25, 0.1)  # Min 10% zoom
+            self.show_image()
+
+    def mouse_wheel_zoom(self, event):
+        """Handle mouse wheel zoom"""
+        if self.scale_1to1:
+            if event.delta > 0:
+                self.zoom_in()
+            else:
+                self.zoom_out()
+
+    def start_pan(self, event):
+        """Start panning with mouse"""
+        self.canvas.scan_mark(event.x, event.y)
+
+    def do_pan(self, event):
+        """Perform panning with mouse drag"""
+        self.canvas.scan_dragto(event.x, event.y, gain=1)
 
 if __name__ == "__main__":
     try:
