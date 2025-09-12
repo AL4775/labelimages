@@ -102,16 +102,13 @@ class ImageLabelTool:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.csv_filename = os.path.join(folder, f"revision_{timestamp}.csv")
         
-        # Filter images that end with "_" followed by a number
+        # Load all image files from the directory
         all_files = [f for f in os.listdir(folder)
                      if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif"))]
         
         self.all_image_paths = []
         for f in all_files:
-            filename_without_ext = os.path.splitext(f)[0]
-            # Check if filename ends with "_" followed by one or more digits
-            if re.search(r'_\d+$', filename_without_ext):
-                self.all_image_paths.append(os.path.join(folder, f))
+            self.all_image_paths.append(os.path.join(folder, f))
         
         self.all_image_paths.sort()
         self.current_index = 0
@@ -262,9 +259,9 @@ class ImageLabelTool:
             parcel_labels_dict = self.calculate_parcel_labels()
             
             for path, label in self.labels.items():
-                parcel_num = self.get_parcel_number(path)
-                parcel_label = parcel_labels_dict.get(parcel_num, "no label") if parcel_num else "no label"
-                writer.writerow([path, label, parcel_num or "", parcel_label])
+                parcel_id = self.get_parcel_number(path)
+                parcel_label = parcel_labels_dict.get(parcel_id, "no label") if parcel_id else "no label"
+                writer.writerow([path, label, parcel_id or "", parcel_label])
 
     def update_counts(self):
         counts = {label: 0 for label in LABELS}
@@ -274,42 +271,50 @@ class ImageLabelTool:
         self.count_var.set("Images: " + ", ".join(f"{label}: {counts[label]}" for label in LABELS))
 
     def get_parcel_number(self, image_path):
-        """Extract the parcel number from the image filename"""
+        """Extract the parcel identifier from the image filename - everything after the 3rd underscore"""
         filename = os.path.basename(image_path)
         filename_without_ext = os.path.splitext(filename)[0]
-        match = re.search(r'_(\d+)$', filename_without_ext)
-        return match.group(1) if match else None
+        
+        # Split by underscore and get everything after the 3rd underscore
+        parts = filename_without_ext.split('_')
+        if len(parts) > 3:
+            # Join everything from index 3 onwards to form the parcel identifier
+            parcel_id = '_'.join(parts[3:])
+            return parcel_id
+        else:
+            # If less than 4 parts, use the entire filename as parcel id
+            return filename_without_ext
 
     def calculate_parcel_labels(self):
         """Calculate parcel labels based on the labeling rules and return a dict"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             return {}
 
-        # Parcel images by their number suffix (use all images, not filtered)
+        # Parcel images by their identifier (everything after 3rd underscore)
         parcels = {}
         for path in self.all_image_paths:
-            parcel_num = self.get_parcel_number(path)
-            if parcel_num:
-                if parcel_num not in parcels:
-                    parcels[parcel_num] = []
-                parcels[parcel_num].append(path)
+            parcel_id = self.get_parcel_number(path)
+            if parcel_id:
+                if parcel_id not in parcels:
+                    parcels[parcel_id] = []
+                parcels[parcel_id].append(path)
 
         # Calculate parcel labels based on rules
         parcel_labels_dict = {}
         
-        for parcel_num, parcel_paths in parcels.items():
+        for parcel_id, parcel_paths in parcels.items():
             parcel_image_labels = [self.labels.get(path, LABELS[0]) for path in parcel_paths]
             
             # Apply parcel labeling rules
             if "no read" in parcel_image_labels:
                 # If at least one image is "no read", parcel is "no read"
-                parcel_labels_dict[parcel_num] = "no read"
+                parcel_labels_dict[parcel_id] = "no read"
             elif all(label == "no label" for label in parcel_image_labels):
                 # If all images are "no label", parcel is "no label"
-                parcel_labels_dict[parcel_num] = "no label"
+                parcel_labels_dict[parcel_id] = "no label"
             else:
                 # Mix of "no label" and "unreadable", parcel is "unreadable"
-                parcel_labels_dict[parcel_num] = "unreadable"
+                parcel_labels_dict[parcel_id] = "unreadable"
                 
         return parcel_labels_dict
 

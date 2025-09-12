@@ -1,0 +1,41 @@
+# 🎉 Image Label Tool v1.0.0
+
+A professional image labeling tool for efficient review and categorization of images.
+
+## ✨ Features
+
+- **Smart Image Loading** - Filters images with `_number` naming pattern
+- **Fast Labeling** - Color-coded radio buttons for quick classification
+- **Parcel Grouping** - Groups images by number suffix with intelligent rules
+- **CSV Export** - Timestamped CSV files with comprehensive data
+- **Progress Tracking** - Real-time statistics with percentage calculations
+- **Filter System** - Focus on specific label categories
+- **Modern UI** - Professional design with intuitive color coding
+
+## 📥 Download
+
+Download `ImageLabelTool.exe` below - no Python installation required!
+
+## 🚀 Quick Start
+
+1. Download and run `ImageLabelTool.exe`
+2. Click "Select Folder" to choose your image directory
+3. Start labeling with the color-coded radio buttons
+4. CSV file automatically saves in the selected folder
+
+## 📋 Requirements
+
+- Windows 10/11
+- Images must follow naming pattern: `basename_number.extension`
+- Supported formats: PNG, JPG, JPEG, BMP, GIF
+
+## 🔗 Links
+
+- [Documentation](README.md)
+- [Features Guide](docs/FEATURES.md)
+- [Development Setup](docs/SETUP.md)
+
+---
+
+**File Size:** ~15MB  
+**Virus Scan:** Clean (Windows Defender)
