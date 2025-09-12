@@ -57,6 +57,9 @@ revision_*.csv
 test_images/
 *.log
 
+# Executable files (use GitHub Releases instead)
+*.exe
+
 # Temporary files
 *.tmp
 *.temp
