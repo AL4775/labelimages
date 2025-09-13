@@ -173,6 +173,11 @@ class ImageLabelTool:
         
         tk.Label(label_frame, text="Label:", bg="#FAFAFA", font=("Arial", 10, "bold")).pack(pady=(0, 5))
         
+        # Add keyboard shortcut help
+        help_text = tk.Label(label_frame, text="Keyboard shortcuts: Q, W, E | ← → Navigate", 
+                           bg="#FAFAFA", font=("Arial", 8), fg="#757575")
+        help_text.pack(pady=(0, 5))
+        
         radio_container = tk.Frame(label_frame, bg="#FAFAFA")
         radio_container.pack()
         
@@ -182,8 +187,18 @@ class ImageLabelTool:
             "no read": "#FCE4EC", 
             "unreadable": "#F3E5F5"
         }
+        
+        # Add keyboard shortcuts to labels
+        label_shortcuts = {
+            "unlabeled": "",
+            "no label": " (Q)",
+            "no read": " (W)", 
+            "unreadable": " (E)"
+        }
+        
         for i, label in enumerate(LABELS):
-            rb = tk.Radiobutton(radio_container, text=label, variable=self.label_var, 
+            display_text = label + label_shortcuts[label]
+            rb = tk.Radiobutton(radio_container, text=display_text, variable=self.label_var, 
                               value=label, command=self.set_label_radio,
                               bg=label_colors[label], font=("Arial", 10, "bold"),
                               selectcolor="white", padx=10, pady=5)
@@ -240,6 +255,21 @@ class ImageLabelTool:
 
         # Bind window resize event to update image display
         self.root.bind('<Configure>', self.on_window_resize)
+        
+        # Bind keyboard shortcuts for labeling
+        self.root.bind('<KeyPress-q>', self.label_shortcut_q)
+        self.root.bind('<KeyPress-Q>', self.label_shortcut_q)
+        self.root.bind('<KeyPress-w>', self.label_shortcut_w)
+        self.root.bind('<KeyPress-W>', self.label_shortcut_w)
+        self.root.bind('<KeyPress-e>', self.label_shortcut_e)
+        self.root.bind('<KeyPress-E>', self.label_shortcut_e)
+        
+        # Bind arrow keys for navigation
+        self.root.bind('<Left>', self.prev_image_shortcut)
+        self.root.bind('<Right>', self.next_image_shortcut)
+        
+        # Set focus to root window to capture keyboard events
+        self.root.focus_set()
 
     def select_folder(self):
         folder = filedialog.askdirectory()
@@ -393,6 +423,32 @@ class ImageLabelTool:
             else:
                 self.current_index = 0
             self.show_image()
+
+    def label_shortcut_q(self, event=None):
+        """Keyboard shortcut: Q for 'no label'"""
+        if self.image_paths:
+            self.label_var.set("no label")
+            self.set_label_radio()
+
+    def label_shortcut_w(self, event=None):
+        """Keyboard shortcut: W for 'no read'"""
+        if self.image_paths:
+            self.label_var.set("no read")
+            self.set_label_radio()
+
+    def label_shortcut_e(self, event=None):
+        """Keyboard shortcut: E for 'unreadable'"""
+        if self.image_paths:
+            self.label_var.set("unreadable")
+            self.set_label_radio()
+
+    def prev_image_shortcut(self, event=None):
+        """Keyboard shortcut: Left arrow for previous image"""
+        self.prev_image()
+
+    def next_image_shortcut(self, event=None):
+        """Keyboard shortcut: Right arrow for next image"""
+        self.next_image()
 
     def on_total_changed(self, event=None):
         """Called when the total parcels field changes"""
