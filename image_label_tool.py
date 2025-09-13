@@ -174,7 +174,7 @@ class ImageLabelTool:
         tk.Label(label_frame, text="Label:", bg="#FAFAFA", font=("Arial", 10, "bold")).pack(pady=(0, 5))
         
         # Add keyboard shortcut help
-        help_text = tk.Label(label_frame, text="Keyboard shortcuts: Q, W, E | ← → Navigate", 
+        help_text = tk.Label(label_frame, text="Keyboard shortcuts: Q, W, E | O, P Navigate", 
                            bg="#FAFAFA", font=("Arial", 8), fg="#757575")
         help_text.pack(pady=(0, 5))
         
@@ -264,9 +264,11 @@ class ImageLabelTool:
         self.root.bind('<KeyPress-e>', self.label_shortcut_e)
         self.root.bind('<KeyPress-E>', self.label_shortcut_e)
         
-        # Bind arrow keys for navigation
-        self.root.bind('<Left>', self.prev_image_shortcut)
-        self.root.bind('<Right>', self.next_image_shortcut)
+        # Bind O/P keys for navigation (avoiding arrow key conflicts with radio buttons)
+        self.root.bind('<KeyPress-o>', self.prev_image_shortcut)
+        self.root.bind('<KeyPress-O>', self.prev_image_shortcut)
+        self.root.bind('<KeyPress-p>', self.next_image_shortcut)
+        self.root.bind('<KeyPress-P>', self.next_image_shortcut)
         
         # Set focus to root window to capture keyboard events
         self.root.focus_set()
