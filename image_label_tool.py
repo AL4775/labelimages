@@ -5,15 +5,19 @@ from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 from datetime import datetime
 import re
+import random
+import threading
+import time
 
-LABELS = ["unlabeled", "no label", "no read", "unreadable"]
+LABELS = ["unlabeled", "no code", "no read", "unreadable"]
 
 class ImageLabelTool:
     def __init__(self, root):
         self.root = root
         self.root.title("Image Label Tool")
         self.root.configure(bg="#FAFAFA")  # Very light gray background
-        self.root.minsize(600, 700)  # Set minimum window size
+        self.root.minsize(1200, 900)  # Set minimum window size - increased for three-panel layout
+        self.root.geometry("1400x950")  # Set initial window size - wider for left + center + right panels
         self.image_paths = []
         self.current_index = 0
         self.labels = {}
@@ -56,7 +60,7 @@ class ImageLabelTool:
         filter_frame.pack(side=tk.LEFT, padx=(20, 0))
         tk.Label(filter_frame, text="Filter:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
         self.filter_var = tk.StringVar(value="All images")
-        filter_options = ["All images", "unlabeled only", "no label only", "no read only", "unreadable only"]
+        filter_options = ["All images", "unlabeled only", "no code only", "no read only", "unreadable only"]
         self.filter_menu = tk.OptionMenu(filter_frame, self.filter_var, *filter_options, command=self.on_filter_changed)
         self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
         self.filter_menu.pack(side=tk.LEFT, padx=(5, 0))
@@ -75,7 +79,7 @@ class ImageLabelTool:
         center_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         
         # Right panel for statistics
-        right_panel = tk.Frame(content_frame, bg="#FAFAFA", width=250)
+        right_panel = tk.Frame(content_frame, bg="#FAFAFA", width=300)
         right_panel.pack(side=tk.RIGHT, fill=tk.Y)
         right_panel.pack_propagate(False)  # Maintain fixed width
 
@@ -111,6 +115,17 @@ class ImageLabelTool:
                                    bg="#CE93D8", fg="white", font=("Arial", 12, "bold"),
                                    padx=8, pady=2, relief="flat", width=3)
         self.btn_zoom_in.pack(side=tk.LEFT)
+
+        # Export operations section
+        export_frame = tk.Frame(left_panel, bg="#FAFAFA")
+        export_frame.pack(pady=(0, 20))
+        tk.Label(export_frame, text="Export:", bg="#FAFAFA", font=("Arial", 10, "bold")).pack()
+        
+        self.btn_gen_no_read = tk.Button(export_frame, text="Gen No Read\nFolder", 
+                                       command=self.generate_no_read_folder,
+                                       bg="#9C27B0", fg="white", font=("Arial", 9, "bold"),
+                                       padx=8, pady=5, relief="flat", width=12)
+        self.btn_gen_no_read.pack(pady=(5, 0))
 
         # === CENTER PANEL: Image Display ===
         # Status indicator centered above image
@@ -183,7 +198,7 @@ class ImageLabelTool:
         
         label_colors = {
             "unlabeled": "#F5F5F5", 
-            "no label": "#FFF3E0", 
+            "no code": "#FFF3E0", 
             "no read": "#FCE4EC", 
             "unreadable": "#F3E5F5"
         }
@@ -191,11 +206,12 @@ class ImageLabelTool:
         # Add keyboard shortcuts to labels
         label_shortcuts = {
             "unlabeled": "",
-            "no label": " (Q)",
+            "no code": " (Q)",
             "no read": " (W)", 
             "unreadable": " (E)"
         }
         
+        self.radio_buttons = []  # Store radio buttons for enabling/disabling
         for i, label in enumerate(LABELS):
             display_text = label + label_shortcuts[label]
             rb = tk.Radiobutton(radio_container, text=display_text, variable=self.label_var, 
@@ -203,6 +219,7 @@ class ImageLabelTool:
                               bg=label_colors[label], font=("Arial", 10, "bold"),
                               selectcolor="white", padx=10, pady=5)
             rb.grid(row=0, column=i, padx=5)
+            self.radio_buttons.append(rb)
         
         # Next button (right side)
         self.btn_next = tk.Button(nav_label_container, text="Next >>", command=self.next_image,
@@ -245,13 +262,63 @@ class ImageLabelTool:
         
         # Total statistics section
         total_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=10, pady=10)
-        total_section.pack(fill=tk.X)
+        total_section.pack(fill=tk.X, pady=(0, 10))
         
         tk.Label(total_section, text="Total Analysis", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#5E88D8").pack()
         self.parcel_stats_var = tk.StringVar()
         self.parcel_stats_label = tk.Label(total_section, textvariable=self.parcel_stats_var, 
                                          font=("Arial", 9), fg="#424242", bg="#F5F5F5", wraplength=220)
         self.parcel_stats_label.pack(pady=(5, 0))
+
+        # Auto Code Detection section
+        auto_detect_section = tk.Frame(right_panel, bg="#FFF3E0", relief="solid", bd=1, padx=10, pady=10)
+        auto_detect_section.pack(fill=tk.X, pady=(0, 10))
+        
+        tk.Label(auto_detect_section, text="Auto Detection", bg="#FFF3E0", font=("Arial", 10, "bold"), fg="#F57C00").pack()
+        
+        self.btn_auto_detect = tk.Button(auto_detect_section, text="Auto Code Detection", 
+                                       command=self.auto_code_detection,
+                                       bg="#FF9800", fg="white", font=("Arial", 10, "bold"),
+                                       padx=20, pady=5, relief="flat")
+        self.btn_auto_detect.pack(pady=(10, 5))
+        
+        # Progress indicator for auto detection
+        self.auto_detect_progress_var = tk.StringVar()
+        self.auto_detect_progress_label = tk.Label(auto_detect_section, textvariable=self.auto_detect_progress_var,
+                                                 bg="#FFF3E0", font=("Arial", 9), fg="#424242", wraplength=220)
+        self.auto_detect_progress_label.pack()
+        
+        # Auto-timer controls
+        timer_frame = tk.Frame(auto_detect_section, bg="#FFF3E0")
+        timer_frame.pack(pady=(10, 0))
+        
+        self.auto_timer_enabled = tk.BooleanVar()
+        self.auto_timer_button = tk.Button(timer_frame, text="Start", 
+                                          command=self.toggle_auto_timer,
+                                          bg="#4CAF50", fg="white", font=("Arial", 9, "bold"),
+                                          activebackground="#45a049", width=6)
+        self.auto_timer_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        tk.Label(timer_frame, text="every", bg="#FFF3E0", font=("Arial", 9)).pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.auto_timer_interval = tk.StringVar(value="10")
+        self.auto_timer_entry = tk.Entry(timer_frame, textvariable=self.auto_timer_interval,
+                                        width=5, font=("Arial", 9), justify="center")
+        self.auto_timer_entry.pack(side=tk.LEFT, padx=(0, 2))
+        
+        tk.Label(timer_frame, text="min", bg="#FFF3E0", font=("Arial", 9)).pack(side=tk.LEFT)
+        
+        # Auto-timer status
+        self.auto_timer_status_var = tk.StringVar()
+        self.auto_timer_status_label = tk.Label(auto_detect_section, textvariable=self.auto_timer_status_var,
+                                               bg="#FFF3E0", font=("Arial", 8), fg="#666666", wraplength=220)
+        self.auto_timer_status_label.pack(pady=(5, 0))
+        
+        # Initialize timer variables
+        self.auto_timer_job = None
+        self.last_auto_run = None
+        self.countdown_job = None
+        self.countdown_end_time = None
 
         # Bind window resize event to update image display
         self.root.bind('<Configure>', self.on_window_resize)
@@ -427,9 +494,9 @@ class ImageLabelTool:
             self.show_image()
 
     def label_shortcut_q(self, event=None):
-        """Keyboard shortcut: Q for 'no label'"""
+        """Keyboard shortcut: Q for 'no code'"""
         if self.image_paths:
-            self.label_var.set("no label")
+            self.label_var.set("no code")
             self.set_label_radio()
 
     def label_shortcut_w(self, event=None):
@@ -473,7 +540,7 @@ class ImageLabelTool:
             # Map filter names to label values
             filter_map = {
                 "unlabeled only": "unlabeled",
-                "no label only": "no label",
+                "no code only": "no code",
                 "no read only": "no read", 
                 "unreadable only": "unreadable"
             }
@@ -545,7 +612,7 @@ class ImageLabelTool:
             
             for path, label in self.labels.items():
                 parcel_id = self.get_parcel_number(path)
-                parcel_label = parcel_labels_dict.get(parcel_id, "no label") if parcel_id else "no label"
+                parcel_label = parcel_labels_dict.get(parcel_id, "no code") if parcel_id else "no code"
                 writer.writerow([path, label, parcel_id or "", parcel_label])
 
     def update_counts(self):
@@ -591,18 +658,18 @@ class ImageLabelTool:
             self.label_status_label.config(fg="#EF9A9A")  # Soft red
 
     def get_parcel_number(self, image_path):
-        """Extract the parcel identifier from the image filename - first part before the first underscore"""
+        """Extract the timestamp from the image filename - last part after the last underscore"""
         filename = os.path.basename(image_path)
         filename_without_ext = os.path.splitext(filename)[0]
         
-        # Split by underscore and get the first part
+        # Split by underscore and get the last part (timestamp)
         parts = filename_without_ext.split('_')
-        if len(parts) > 0:
-            # Return the first part as the parcel identifier
-            parcel_id = parts[0]
-            return parcel_id
+        if len(parts) > 1:
+            # Return the last part as the timestamp identifier
+            timestamp_id = parts[-1]
+            return timestamp_id
         else:
-            # If no underscore, use the entire filename as parcel id
+            # If no underscore, use the entire filename as identifier
             return filename_without_ext
 
     def calculate_parcel_labels(self):
@@ -629,9 +696,9 @@ class ImageLabelTool:
             if "no read" in parcel_image_labels:
                 # If at least one image is "no read", parcel is "no read"
                 parcel_labels_dict[parcel_id] = "no read"
-            elif all(label in ["unlabeled", "no label"] for label in parcel_image_labels):
-                # If all images are "unlabeled" or "no label", parcel is "no label"
-                parcel_labels_dict[parcel_id] = "no label"
+            elif all(label in ["unlabeled", "no code"] for label in parcel_image_labels):
+                # If all images are "unlabeled" or "no code", parcel is "no code"
+                parcel_labels_dict[parcel_id] = "no code"
             else:
                 # Mix of labeled images (including "unreadable"), parcel is "unreadable"
                 parcel_labels_dict[parcel_id] = "unreadable"
@@ -647,7 +714,7 @@ class ImageLabelTool:
         parcel_labels_dict = self.calculate_parcel_labels()
         
         # Count parcels by label
-        parcel_labels = {"no label": 0, "no read": 0, "unreadable": 0}
+        parcel_labels = {"no code": 0, "no read": 0, "unreadable": 0}
         for parcel_label in parcel_labels_dict.values():
             if parcel_label in parcel_labels:
                 parcel_labels[parcel_label] += 1
@@ -674,7 +741,7 @@ class ImageLabelTool:
 
         # Get current parcel counts
         parcel_labels_dict = self.calculate_parcel_labels()
-        parcel_counts = {"no label": 0, "no read": 0, "unreadable": 0}
+        parcel_counts = {"no code": 0, "no read": 0, "unreadable": 0}
         for parcel_label in parcel_labels_dict.values():
             if parcel_label in parcel_counts:
                 parcel_counts[parcel_label] += 1
@@ -683,14 +750,14 @@ class ImageLabelTool:
         read_count = total_entered - parcel_counts["no read"] - parcel_counts["unreadable"]
         
         # Calculate percentages
-        no_label_pct = (parcel_counts["no label"] / total_entered) * 100
+        no_code_pct = (parcel_counts["no code"] / total_entered) * 100
         no_read_pct = (parcel_counts["no read"] / total_entered) * 100
         unreadable_pct = (parcel_counts["unreadable"] / total_entered) * 100
         read_pct = (read_count / total_entered) * 100 if read_count >= 0 else 0
 
         # Multi-line format for better readability
         lines = [f"Total {total_entered}:"]
-        lines.append(f"  no_label: {parcel_counts['no label']} ({no_label_pct:.1f}%)")
+        lines.append(f"  no_code: {parcel_counts['no code']} ({no_code_pct:.1f}%)")
         lines.append(f"  no_read: {parcel_counts['no read']} ({no_read_pct:.1f}%)")
         lines.append(f"  unreadable: {parcel_counts['unreadable']} ({unreadable_pct:.1f}%)")
         lines.append(f"  read: {read_count} ({read_pct:.1f}%)")
@@ -698,24 +765,19 @@ class ImageLabelTool:
         self.parcel_stats_var.set("\n".join(lines))
 
     def auto_detect_total_groups(self):
-        """Auto-detect total number of groups by finding the largest number in first filename parts"""
+        """Auto-detect total number of groups by counting unique timestamps in filenames"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             return
         
-        max_group_number = 0
+        unique_timestamps = set()
         for path in self.all_image_paths:
-            parcel_id = self.get_parcel_number(path)
-            try:
-                # Try to convert the first part to a number
-                group_number = int(parcel_id)
-                max_group_number = max(max_group_number, group_number)
-            except ValueError:
-                # Skip non-numeric group identifiers
-                continue
+            timestamp_id = self.get_parcel_number(path)
+            if timestamp_id:  # Only add non-empty timestamp IDs
+                unique_timestamps.add(timestamp_id)
         
-        if max_group_number > 0:
-            # Set the total parcels field with the detected number
-            self.total_parcels_var.set(str(max_group_number))
+        if len(unique_timestamps) > 0:
+            # Set the total parcels field with the count of unique timestamps
+            self.total_parcels_var.set(str(len(unique_timestamps)))
             # Update statistics immediately
             self.update_total_stats()
 
@@ -779,6 +841,494 @@ class ImageLabelTool:
     def do_pan(self, event):
         """Perform panning with mouse drag"""
         self.canvas.scan_dragto(event.x, event.y, gain=1)
+
+    def auto_detect_function(self):
+        """Auto-detect function that returns a random integer between 0 and 3"""
+        return random.randint(0, 3)
+
+    def get_unlabeled_images(self):
+        """Get list of images that are not yet in the CSV (unlabeled)"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            return []
+        
+        # Load existing labels from CSV
+        existing_labels = set()
+        if hasattr(self, 'labels') and self.labels:
+            existing_labels = set(self.labels.keys())
+        
+        # Find unlabeled images
+        unlabeled = []
+        for path in self.all_image_paths:
+            if path not in existing_labels:
+                unlabeled.append(path)
+        
+        return unlabeled
+
+    def auto_code_detection(self):
+        """Main auto code detection method that processes unlabeled images"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            messagebox.showwarning("No Images", "Please select a folder with images first.")
+            return
+        
+        unlabeled_images = self.get_unlabeled_images()
+        
+        if not unlabeled_images:
+            messagebox.showinfo("Complete", "All images are already labeled!")
+            return
+        
+        # Disable the button and all UI controls during processing
+        self.btn_auto_detect.config(state='disabled', text="Processing...")
+        self.disable_ui_controls()
+        
+        # Start processing in a separate thread to avoid freezing the UI
+        processing_thread = threading.Thread(target=self.process_auto_detection, args=(unlabeled_images,))
+        processing_thread.daemon = True
+        processing_thread.start()
+
+    def process_auto_detection(self, unlabeled_images):
+        """Process auto detection for unlabeled images in a separate thread"""
+        total_images = len(unlabeled_images)
+        processed = 0
+        
+        for image_path in unlabeled_images:
+            # Update progress on UI thread
+            self.root.after(0, self.update_auto_detect_progress, processed, total_images, os.path.basename(image_path))
+            
+            # Get auto detection result
+            detection_result = self.auto_detect_function()
+            
+            # Determine label based on result
+            if detection_result == 0:
+                label = "no code"
+            else:  # detection_result > 0
+                label = "no read"
+            
+            # Update labels dictionary
+            if not hasattr(self, 'labels'):
+                self.labels = {}
+            self.labels[image_path] = label
+            
+            # If this is the currently displayed image, refresh the display immediately
+            if (hasattr(self, 'image_paths') and self.image_paths and 
+                self.current_index < len(self.image_paths) and 
+                image_path == self.image_paths[self.current_index]):
+                self.root.after(0, self.show_image)
+            
+            # Save to CSV immediately
+            self.root.after(0, self.save_csv)
+            
+            # Update statistics
+            self.root.after(0, self.update_total_stats)
+            self.root.after(0, self.update_parcel_stats)
+            
+            # Small delay to show progress (and simulate processing time)
+            time.sleep(0.1)
+            
+            processed += 1
+        
+        # Final update
+        self.root.after(0, self.complete_auto_detection, total_images)
+
+    def update_auto_detect_progress(self, processed, total, current_file):
+        """Update the progress display for auto detection"""
+        progress_text = f"Processing: {processed}/{total}\nCurrent: {current_file}"
+        self.auto_detect_progress_var.set(progress_text)
+
+    def complete_auto_detection(self, total_processed):
+        """Complete the auto detection process"""
+        # Re-enable button and all UI controls
+        self.btn_auto_detect.config(state='normal', text="Auto Code Detection")
+        self.enable_ui_controls()
+        
+        # Update progress display
+        self.auto_detect_progress_var.set(f"Completed!\nProcessed {total_processed} images")
+        
+        # Update all statistics panels
+        self.update_progress_display()
+        self.update_counts()
+        self.update_total_stats()
+        self.update_parcel_stats()
+        
+        # Refresh the current image display to update radio button and status
+        if hasattr(self, 'image_paths') and self.image_paths and self.current_index < len(self.image_paths):
+            self.show_image()
+
+    def toggle_auto_timer(self):
+        """Toggle the auto-timer functionality"""
+        if not self.auto_timer_enabled.get():
+            # Starting the timer
+            self.start_auto_timer()
+        else:
+            # Stopping the timer
+            self.stop_auto_timer()
+
+    def generate_no_read_folder(self):
+        """Generate a timestamped folder and copy all 'no read' images into it"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            messagebox.showwarning("No Images", "Please select a folder with images first.")
+            return
+        
+        # Find all 'no read' images
+        no_read_images = [path for path in self.all_image_paths 
+                         if path in self.labels and self.labels[path] == "no read"]
+        
+        if not no_read_images:
+            messagebox.showinfo("No Images", "No 'no read' images found to copy.")
+            return
+        
+        # Disable button during processing
+        self.btn_gen_no_read.config(state='disabled', text="Generating...")
+        
+        # Use the progress display for feedback
+        self.auto_detect_progress_var.set(f"Preparing to copy {len(no_read_images)} 'no read' images...")
+        
+        # Start processing in a separate thread to avoid freezing the UI
+        import threading
+        processing_thread = threading.Thread(target=self.process_no_read_copy, args=(no_read_images,))
+        processing_thread.daemon = True
+        processing_thread.start()
+
+    def process_no_read_copy(self, no_read_images):
+        """Process copying no read images in a separate thread"""
+        import shutil
+        from datetime import datetime
+        
+        try:
+            # Check if folder_path exists
+            if not hasattr(self, 'folder_path') or not self.folder_path:
+                raise Exception("No folder selected")
+                
+            # Create timestamped folder name
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            folder_name = f"no_read_{timestamp}"
+            destination_folder = os.path.join(self.folder_path, folder_name)
+            
+            # Create the directory
+            os.makedirs(destination_folder, exist_ok=True)
+            
+            total_images = len(no_read_images)
+            copied = 0
+            
+            for image_path in no_read_images:
+                # Update progress on UI thread
+                filename = os.path.basename(image_path)
+                self.root.after(0, self.update_copy_progress, copied + 1, total_images, filename)
+                
+                # Copy the file
+                destination_path = os.path.join(destination_folder, filename)
+                shutil.copy2(image_path, destination_path)
+                
+                copied += 1
+                
+                # Small delay to show progress
+                import time
+                time.sleep(0.05)
+            
+            # Completion
+            self.root.after(0, self.complete_no_read_copy, total_images, folder_name)
+            
+        except Exception as e:
+            # Error handling
+            self.root.after(0, self.copy_error, str(e))
+
+    def update_copy_progress(self, current, total, filename):
+        """Update the progress display for copying"""
+        progress_text = f"Copying {current}/{total}\n{filename}"
+        self.auto_detect_progress_var.set(progress_text)
+
+    def complete_no_read_copy(self, total_copied, folder_name):
+        """Complete the copy operation"""
+        # Re-enable button
+        self.btn_gen_no_read.config(state='normal', text="Gen No Read Folder")
+        
+        # Show completion message
+        self.auto_detect_progress_var.set(f"Completed!\nCopied {total_copied} images to:\n{folder_name}")
+        
+        # Show success dialog
+        messagebox.showinfo("Copy Complete", 
+                          f"Successfully copied {total_copied} 'no read' images to folder:\n{folder_name}")
+
+    def copy_error(self, error_message):
+        """Handle copy operation errors"""
+        # Re-enable button
+        self.btn_gen_no_read.config(state='normal', text="Gen No Read Folder")
+        
+        # Show error message
+        self.auto_detect_progress_var.set("Copy failed!")
+        messagebox.showerror("Copy Error", f"Failed to copy images:\n{error_message}")
+
+    def start_auto_timer(self):
+        """Start the auto-timer for periodic auto detection"""
+        try:
+            interval_minutes = float(self.auto_timer_interval.get())
+            if interval_minutes <= 0:
+                raise ValueError("Interval must be positive")
+        except ValueError:
+            messagebox.showerror("Invalid Interval", "Please enter a valid positive number for minutes.")
+            return
+        
+        self.stop_auto_timer()  # Stop any existing timer
+        
+        # Update UI state
+        self.auto_timer_enabled.set(True)
+        self.auto_timer_button.config(text="Stop", bg="#f44336", activebackground="#d32f2f")
+        self.auto_timer_entry.config(state='disabled')
+        
+        # Disable all controls while auto-timer is running
+        self.disable_ui_controls()
+        
+        interval_ms = int(interval_minutes * 60 * 1000)  # Convert minutes to milliseconds
+        self.auto_timer_job = self.root.after(interval_ms, self.run_auto_detection_timer)
+        
+        # Start countdown display
+        self.auto_timer_status_var.set("Auto-detection enabled")
+        self.start_countdown(interval_minutes)
+        
+    def stop_auto_timer(self):
+        """Stop the auto-timer"""
+        if self.auto_timer_job:
+            self.root.after_cancel(self.auto_timer_job)
+            self.auto_timer_job = None
+        
+        # Stop countdown
+        self.stop_countdown()
+        
+        # Update UI state
+        self.auto_timer_enabled.set(False)
+        self.auto_timer_button.config(text="Start", bg="#4CAF50", activebackground="#45a049")
+        self.auto_timer_entry.config(state='normal')
+        
+        # Re-enable all controls when auto-timer is stopped
+        self.enable_ui_controls()
+        
+        self.auto_timer_status_var.set("Auto-detection disabled")
+
+    def start_countdown(self, interval_minutes):
+        """Start the countdown timer display"""
+        from datetime import datetime, timedelta
+        self.countdown_end_time = datetime.now() + timedelta(minutes=interval_minutes)
+        self.update_countdown()
+
+    def stop_countdown(self):
+        """Stop the countdown timer display"""
+        if self.countdown_job:
+            self.root.after_cancel(self.countdown_job)
+            self.countdown_job = None
+
+    def update_countdown(self):
+        """Update the countdown display every second"""
+        if not self.auto_timer_enabled.get() or not self.countdown_end_time:
+            return
+            
+        from datetime import datetime
+        now = datetime.now()
+        
+        if now >= self.countdown_end_time:
+            # Countdown finished
+            self.auto_timer_status_var.set("Auto-detection running...")
+            return
+            
+        # Calculate remaining time
+        remaining = self.countdown_end_time - now
+        total_seconds = int(remaining.total_seconds())
+        
+        if total_seconds > 60:
+            minutes = total_seconds // 60
+            seconds = total_seconds % 60
+            if seconds == 0:
+                countdown_text = f"Next run in: {minutes}min"
+            else:
+                countdown_text = f"Next run in: {minutes}min {seconds}sec"
+        else:
+            countdown_text = f"Next run in: {total_seconds}sec"
+        
+        # Get current status without overwriting it
+        current_status = self.auto_timer_status_var.get()
+        # If current status contains countdown info, extract the base status
+        if "Next run in:" in current_status:
+            base_status = current_status.split("\nNext run in:")[0]
+        else:
+            base_status = current_status
+            
+        self.auto_timer_status_var.set(f"{base_status}\n{countdown_text}")
+        
+        # Schedule next update in 1 second
+        self.countdown_job = self.root.after(1000, self.update_countdown)
+
+    def scan_for_new_images(self):
+        """Scan the folder for new images that weren't there before"""
+        if not hasattr(self, 'folder_path') or not self.folder_path:
+            return []
+        
+        # Get current files in folder
+        try:
+            current_files = [f for f in os.listdir(self.folder_path)
+                           if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif"))]
+            
+            current_image_paths = []
+            for f in current_files:
+                current_image_paths.append(os.path.join(self.folder_path, f))
+            
+            current_image_paths.sort()
+            
+            # Find new images (not in self.all_image_paths)
+            new_images = []
+            if hasattr(self, 'all_image_paths'):
+                new_images = [path for path in current_image_paths if path not in self.all_image_paths]
+                
+                # Update the all_image_paths list with new images
+                if new_images:
+                    self.all_image_paths.extend(new_images)
+                    self.all_image_paths.sort()
+            else:
+                # If all_image_paths doesn't exist, all current images are "new"
+                new_images = current_image_paths
+                self.all_image_paths = current_image_paths
+                
+            return new_images
+            
+        except Exception as e:
+            return []
+
+    def run_auto_detection_timer(self):
+        """Run auto detection from timer (silent mode)"""
+        if not self.auto_timer_enabled.get():
+            return
+        
+        # Update last run time and show execution
+        from datetime import datetime
+        self.last_auto_run = datetime.now()
+        current_time = self.last_auto_run.strftime('%H:%M:%S')
+        
+        # First scan for new images in the folder
+        self.auto_timer_status_var.set(f"[{current_time}] Scanning folder for new images...")
+        new_images = self.scan_for_new_images()
+        
+        if new_images:
+            self.auto_timer_status_var.set(f"Found {len(new_images)} new images!\nProcessing unlabeled images...")
+        else:
+            self.auto_timer_status_var.set("No new images found.\nChecking unlabeled images...")
+        
+        # Run auto detection silently (no popup)
+        if hasattr(self, 'all_image_paths') and self.all_image_paths:
+            unlabeled_images = self.get_unlabeled_images()
+            
+            if unlabeled_images:
+                # Show different message based on whether we found new images
+                if new_images:
+                    new_unlabeled = [img for img in new_images if img in unlabeled_images]
+                    if new_unlabeled:
+                        self.auto_timer_status_var.set(f"Processing {len(new_unlabeled)} new unlabeled images\n(Total unlabeled: {len(unlabeled_images)})")
+                    else:
+                        self.auto_timer_status_var.set(f"New images already labeled\nProcessing {len(unlabeled_images)} unlabeled images")
+                else:
+                    self.auto_timer_status_var.set(f"Processing {len(unlabeled_images)} unlabeled images")
+                
+                # Run detection in background (controls already disabled)
+                self.process_auto_detection_silent(unlabeled_images)
+            else:
+                if new_images:
+                    self.auto_timer_status_var.set(f"Found {len(new_images)} new images\nAll images are now labeled!")
+                else:
+                    self.auto_timer_status_var.set("No new images found\nAll existing images labeled")
+        
+        # Schedule next run directly without validation (we already validated when starting)
+        if self.auto_timer_enabled.get():
+            try:
+                interval_minutes = float(self.auto_timer_interval.get())
+                interval_ms = int(interval_minutes * 60 * 1000)
+                self.auto_timer_job = self.root.after(interval_ms, self.run_auto_detection_timer)
+                
+                # Restart countdown for next run
+                self.start_countdown(interval_minutes)
+            except ValueError:
+                # If interval is invalid, stop the timer
+                self.stop_auto_timer()
+
+    def disable_ui_controls(self):
+        """Disable all UI controls except the Stop button during auto-detection"""
+        # Disable navigation buttons
+        self.btn_prev.config(state='disabled')
+        self.btn_next.config(state='disabled')
+        
+        # Disable radio buttons
+        for rb in self.radio_buttons:
+            rb.config(state='disabled')
+        
+        # Disable other buttons
+        self.btn_select.config(state='disabled')
+        self.btn_auto_detect.config(state='disabled')
+        self.btn_gen_no_read.config(state='disabled')
+        self.btn_1to1.config(state='disabled')
+        self.btn_zoom_in.config(state='disabled')
+        self.btn_zoom_out.config(state='disabled')
+        
+        # Disable entry fields
+        self.total_parcels_entry.config(state='disabled')
+        # Note: auto_timer_entry is already disabled when timer is running
+
+    def enable_ui_controls(self):
+        """Re-enable all UI controls after auto-detection completes"""
+        # Enable navigation buttons
+        self.btn_prev.config(state='normal')
+        self.btn_next.config(state='normal')
+        
+        # Enable radio buttons
+        for rb in self.radio_buttons:
+            rb.config(state='normal')
+        
+        # Enable other buttons
+        self.btn_select.config(state='normal')
+        self.btn_auto_detect.config(state='normal')
+        self.btn_gen_no_read.config(state='normal')
+        self.btn_1to1.config(state='normal')
+        self.btn_zoom_in.config(state='normal')
+        self.btn_zoom_out.config(state='normal')
+        
+        # Enable entry fields
+        self.total_parcels_entry.config(state='normal')
+
+    def process_auto_detection_silent(self, unlabeled_images):
+        """Process auto detection silently without popup dialogs"""
+        total_images = len(unlabeled_images)
+        processed = 0
+        
+        for image_path in unlabeled_images:
+            # Update progress indicator
+            processed += 1
+            self.auto_timer_status_var.set(f"Processing {processed}/{total_images}\n{os.path.basename(image_path)}")
+            self.root.update_idletasks()  # Force UI update
+            
+            # Get auto detection result
+            detection_result = self.auto_detect_function()
+            
+            # Determine label based on result
+            if detection_result == 0:
+                label = "no code"
+            else:  # detection_result > 0
+                label = "no read"
+            
+            # Update labels dictionary
+            if not hasattr(self, 'labels'):
+                self.labels = {}
+            self.labels[image_path] = label
+            
+            # If this is the currently displayed image, refresh the display immediately
+            if (hasattr(self, 'image_paths') and self.image_paths and 
+                self.current_index < len(self.image_paths) and 
+                image_path == self.image_paths[self.current_index]):
+                self.show_image()
+        
+        # Save to CSV and update statistics
+        self.save_csv()
+        self.update_total_stats()
+        self.update_parcel_stats()
+        self.update_progress_display()
+        self.update_counts()
+        
+        # Update status with completion info
+        completion_time = datetime.now().strftime("%H:%M:%S")
+        self.auto_timer_status_var.set(f"Auto-detection complete at {completion_time}\nProcessed {total_images} images")
 
 if __name__ == "__main__":
     try:
