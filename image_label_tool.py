@@ -8,16 +8,19 @@ import re
 import random
 import threading
 import time
+import cv2
+import numpy as np
+import logging
 
-LABELS = ["unlabeled", "no code", "no read", "unreadable"]
+LABELS = ["(Unclassified)", "no code", "read failure", "occluded", "image quality", "damaged", "other"]
 
 class ImageLabelTool:
     def __init__(self, root):
         self.root = root
         self.root.title("Image Label Tool")
         self.root.configure(bg="#FAFAFA")  # Very light gray background
-        self.root.minsize(1200, 900)  # Set minimum window size - increased for three-panel layout
-        self.root.geometry("1400x950")  # Set initial window size - wider for left + center + right panels
+        self.root.minsize(1600, 900)  # Set minimum window size - increased for wider radio button layout
+        self.root.geometry("1800x950")  # Set initial window size - wider to accommodate all 7 label categories
         self.image_paths = []
         self.current_index = 0
         self.labels = {}
@@ -28,7 +31,52 @@ class ImageLabelTool:
         self.zoom_level = 1.0  # Track zoom level for manual zoom
         self.pan_start_x = 0  # For mouse panning
         self.pan_start_y = 0  # For mouse panning
+        
+        # Set up logging for barcode detection
+        self.setup_logging()
+        
         self.setup_ui()
+
+    def setup_logging(self):
+        """Set up logging for barcode detection activities"""
+        # Create logs directory if it doesn't exist
+        logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        # Create a timestamped log file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_filename = os.path.join(logs_dir, f'barcode_detection_{timestamp}.log')
+        
+        # Configure logging
+        self.logger = logging.getLogger('BarcodeDetection')
+        self.logger.setLevel(logging.INFO)
+        
+        # Remove any existing handlers to avoid duplicates
+        for handler in self.logger.handlers[:]:
+            self.logger.removeHandler(handler)
+        
+        # Create file handler
+        file_handler = logging.FileHandler(log_filename, encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+        
+        # Create console handler for debugging
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.WARNING)  # Only warnings and errors to console
+        
+        # Create formatter
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
+        
+        # Add handlers to logger
+        self.logger.addHandler(file_handler)
+        self.logger.addHandler(console_handler)
+        
+        # Log the start of the session
+        self.logger.info("="*60)
+        self.logger.info("BARCODE DETECTION LOG SESSION STARTED")
+        self.logger.info("="*60)
+        self.logger.info(f"Log file: {log_filename}")
 
     def setup_ui(self):
         # Main container with padding
@@ -45,10 +93,10 @@ class ImageLabelTool:
                                   padx=20, pady=8, relief="flat")
         self.btn_select.pack(side=tk.LEFT)
         
-        # Total parcels input (right side)
+        # Total groups input (right side)
         total_frame = tk.Frame(top_frame, bg="#FAFAFA")
         total_frame.pack(side=tk.RIGHT)
-        tk.Label(total_frame, text="Total Parcels:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
+        tk.Label(total_frame, text="Total Groups:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
         self.total_parcels_var = tk.StringVar()
         self.total_parcels_entry = tk.Entry(total_frame, textvariable=self.total_parcels_var, width=10,
                                           font=("Arial", 10), bg="white", relief="solid", bd=1)
@@ -60,7 +108,7 @@ class ImageLabelTool:
         filter_frame.pack(side=tk.LEFT, padx=(20, 0))
         tk.Label(filter_frame, text="Filter:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
         self.filter_var = tk.StringVar(value="All images")
-        filter_options = ["All images", "unlabeled only", "no code only", "no read only", "unreadable only"]
+        filter_options = ["All images", "(Unclassified) only", "no code only", "read failure only", "occluded only", "image quality only", "damaged only", "other only"]
         self.filter_menu = tk.OptionMenu(filter_frame, self.filter_var, *filter_options, command=self.on_filter_changed)
         self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
         self.filter_menu.pack(side=tk.LEFT, padx=(5, 0))
@@ -70,7 +118,7 @@ class ImageLabelTool:
         content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
         # Left panel for controls
-        left_panel = tk.Frame(content_frame, bg="#FAFAFA", width=200)
+        left_panel = tk.Frame(content_frame, bg="#FAFAFA", width=220)
         left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         left_panel.pack_propagate(False)  # Maintain fixed width
         
@@ -79,7 +127,7 @@ class ImageLabelTool:
         center_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         
         # Right panel for statistics
-        right_panel = tk.Frame(content_frame, bg="#FAFAFA", width=300)
+        right_panel = tk.Frame(content_frame, bg="#FAFAFA", width=350)
         right_panel.pack(side=tk.RIGHT, fill=tk.Y)
         right_panel.pack_propagate(False)  # Maintain fixed width
 
@@ -121,8 +169,8 @@ class ImageLabelTool:
         export_frame.pack(pady=(0, 20))
         tk.Label(export_frame, text="Export:", bg="#FAFAFA", font=("Arial", 10, "bold")).pack()
         
-        self.btn_gen_no_read = tk.Button(export_frame, text="Gen No Read\nFolder", 
-                                       command=self.generate_no_read_folder,
+        self.btn_gen_no_read = tk.Button(export_frame, text="Gen Read Failure\nFolder", 
+                                       command=self.generate_read_failure_folder,
                                        bg="#9C27B0", fg="white", font=("Arial", 9, "bold"),
                                        padx=8, pady=5, relief="flat", width=12)
         self.btn_gen_no_read.pack(pady=(5, 0))
@@ -189,7 +237,7 @@ class ImageLabelTool:
         tk.Label(label_frame, text="Label:", bg="#FAFAFA", font=("Arial", 10, "bold")).pack(pady=(0, 5))
         
         # Add keyboard shortcut help
-        help_text = tk.Label(label_frame, text="Keyboard shortcuts: Q, W, E | O, P Navigate", 
+        help_text = tk.Label(label_frame, text="Keyboard shortcuts: Q, W, E, R, T, Y | O, P Navigate", 
                            bg="#FAFAFA", font=("Arial", 8), fg="#757575")
         help_text.pack(pady=(0, 5))
         
@@ -197,18 +245,24 @@ class ImageLabelTool:
         radio_container.pack()
         
         label_colors = {
-            "unlabeled": "#F5F5F5", 
+            "(Unclassified)": "#F5F5F5", 
             "no code": "#FFF3E0", 
-            "no read": "#FCE4EC", 
-            "unreadable": "#F3E5F5"
+            "read failure": "#FCE4EC", 
+            "occluded": "#E3F2FD",
+            "image quality": "#F1F8E9",
+            "damaged": "#FFF8E1",
+            "other": "#F3E5F5"
         }
         
         # Add keyboard shortcuts to labels
         label_shortcuts = {
-            "unlabeled": "",
+            "(Unclassified)": "",
             "no code": " (Q)",
-            "no read": " (W)", 
-            "unreadable": " (E)"
+            "read failure": " (W)", 
+            "occluded": " (E)",
+            "image quality": " (R)",
+            "damaged": " (T)",
+            "other": " (Y)"
         }
         
         self.radio_buttons = []  # Store radio buttons for enabling/disabling
@@ -254,7 +308,7 @@ class ImageLabelTool:
         parcel_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=10, pady=10)
         parcel_section.pack(fill=tk.X, pady=(0, 10))
         
-        tk.Label(parcel_section, text="Parcel Summary", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#81C784").pack()
+        tk.Label(parcel_section, text="Group Summary", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#81C784").pack()
         self.parcel_count_var = tk.StringVar()
         self.parcel_count_label = tk.Label(parcel_section, textvariable=self.parcel_count_var, 
                                          font=("Arial", 9), bg="#F5F5F5", fg="#424242", wraplength=220)
@@ -270,19 +324,19 @@ class ImageLabelTool:
                                          font=("Arial", 9), fg="#424242", bg="#F5F5F5", wraplength=220)
         self.parcel_stats_label.pack(pady=(5, 0))
 
-        # Auto Code Detection section
+        # Auto no-code / code classification section
         auto_detect_section = tk.Frame(right_panel, bg="#FFF3E0", relief="solid", bd=1, padx=10, pady=10)
         auto_detect_section.pack(fill=tk.X, pady=(0, 10))
         
-        tk.Label(auto_detect_section, text="Auto Detection", bg="#FFF3E0", font=("Arial", 10, "bold"), fg="#F57C00").pack()
+        tk.Label(auto_detect_section, text="Auto Classification", bg="#FFF3E0", font=("Arial", 10, "bold"), fg="#F57C00").pack()
         
-        self.btn_auto_detect = tk.Button(auto_detect_section, text="Auto Code Detection", 
+        self.btn_auto_detect = tk.Button(auto_detect_section, text="Auto no-code / code\nclassification", 
                                        command=self.auto_code_detection,
-                                       bg="#FF9800", fg="white", font=("Arial", 10, "bold"),
+                                       bg="#FF9800", fg="white", font=("Arial", 9, "bold"),
                                        padx=20, pady=5, relief="flat")
         self.btn_auto_detect.pack(pady=(10, 5))
         
-        # Progress indicator for auto detection
+        # Progress indicator for auto classification
         self.auto_detect_progress_var = tk.StringVar()
         self.auto_detect_progress_label = tk.Label(auto_detect_section, textvariable=self.auto_detect_progress_var,
                                                  bg="#FFF3E0", font=("Arial", 9), fg="#424242", wraplength=220)
@@ -330,6 +384,12 @@ class ImageLabelTool:
         self.root.bind('<KeyPress-W>', self.label_shortcut_w)
         self.root.bind('<KeyPress-e>', self.label_shortcut_e)
         self.root.bind('<KeyPress-E>', self.label_shortcut_e)
+        self.root.bind('<KeyPress-r>', self.label_shortcut_r)
+        self.root.bind('<KeyPress-R>', self.label_shortcut_r)
+        self.root.bind('<KeyPress-t>', self.label_shortcut_t)
+        self.root.bind('<KeyPress-T>', self.label_shortcut_t)
+        self.root.bind('<KeyPress-y>', self.label_shortcut_y)
+        self.root.bind('<KeyPress-Y>', self.label_shortcut_y)
         
         # Bind O/P keys for navigation (avoiding arrow key conflicts with radio buttons)
         self.root.bind('<KeyPress-o>', self.prev_image_shortcut)
@@ -500,15 +560,33 @@ class ImageLabelTool:
             self.set_label_radio()
 
     def label_shortcut_w(self, event=None):
-        """Keyboard shortcut: W for 'no read'"""
+        """Keyboard shortcut: W for 'read failure'"""
         if self.image_paths:
-            self.label_var.set("no read")
+            self.label_var.set("read failure")
             self.set_label_radio()
 
     def label_shortcut_e(self, event=None):
-        """Keyboard shortcut: E for 'unreadable'"""
+        """Keyboard shortcut: E for 'occluded'"""
         if self.image_paths:
-            self.label_var.set("unreadable")
+            self.label_var.set("occluded")
+            self.set_label_radio()
+
+    def label_shortcut_r(self, event=None):
+        """Keyboard shortcut: R for 'image quality'"""
+        if self.image_paths:
+            self.label_var.set("image quality")
+            self.set_label_radio()
+
+    def label_shortcut_t(self, event=None):
+        """Keyboard shortcut: T for 'damaged'"""
+        if self.image_paths:
+            self.label_var.set("damaged")
+            self.set_label_radio()
+
+    def label_shortcut_y(self, event=None):
+        """Keyboard shortcut: Y for 'other'"""
+        if self.image_paths:
+            self.label_var.set("other")
             self.set_label_radio()
 
     def prev_image_shortcut(self, event=None):
@@ -539,10 +617,13 @@ class ImageLabelTool:
         else:
             # Map filter names to label values
             filter_map = {
-                "unlabeled only": "unlabeled",
+                "(Unclassified) only": "(Unclassified)",
                 "no code only": "no code",
-                "no read only": "no read", 
-                "unreadable only": "unreadable"
+                "read failure only": "read failure",
+                "occluded only": "occluded",
+                "image quality only": "image quality",
+                "damaged only": "damaged",
+                "other only": "other"
             }
             
             target_label = filter_map.get(filter_value)
@@ -628,17 +709,17 @@ class ImageLabelTool:
         self.count_var.set("\n".join(lines))
 
     def update_progress_display(self):
-        """Update the progress counter showing labeled vs total images"""
+        """Update the progress counter showing classified vs total images"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             self.progress_var.set("")
             return
         
         total_images = len(self.all_image_paths)
-        labeled_images = len([path for path in self.all_image_paths if path in self.labels and self.labels[path] != "unlabeled"])
-        unlabeled_images = total_images - labeled_images
+        classified_images = len([path for path in self.all_image_paths if path in self.labels and self.labels[path] != "(Unclassified)"])
+        unclassified_images = total_images - classified_images
         
         # Multi-line format for better readability
-        progress_text = f"Progress:\n{labeled_images}/{total_images} labeled\n({unlabeled_images} remaining)"
+        progress_text = f"Progress:\n{classified_images}/{total_images} classified\n({unclassified_images} remaining)"
         self.progress_var.set(progress_text)
 
     def update_current_label_status(self):
@@ -648,26 +729,32 @@ class ImageLabelTool:
             return
         
         current_path = self.image_paths[self.current_index]
-        if current_path in self.labels and self.labels[current_path] != "unlabeled":
-            # Image has been labeled
-            self.label_status_var.set("✓ LABELED")
+        if current_path in self.labels and self.labels[current_path] != "(Unclassified)":
+            # Image has been classified
+            self.label_status_var.set("✓ CLASSIFIED")
             self.label_status_label.config(fg="#81C784")  # Soft green
         else:
-            # Image is unlabeled
-            self.label_status_var.set("○ UNLABELED")
+            # Image is unclassified
+            self.label_status_var.set("○ UNCLASSIFIED")
             self.label_status_label.config(fg="#EF9A9A")  # Soft red
 
     def get_parcel_number(self, image_path):
-        """Extract the timestamp from the image filename - last part after the last underscore"""
+        """Extract the group ID from filename using ID (first part) + Timestamp (last part)"""
         filename = os.path.basename(image_path)
         filename_without_ext = os.path.splitext(filename)[0]
         
-        # Split by underscore and get the last part (timestamp)
+        # Split by underscore to get parts
         parts = filename_without_ext.split('_')
-        if len(parts) > 1:
-            # Return the last part as the timestamp identifier
-            timestamp_id = parts[-1]
-            return timestamp_id
+        if len(parts) >= 2:
+            # Get ID (first part) and timestamp (last part)
+            id_part = parts[0]
+            timestamp_part = parts[-1]
+            # Return concatenated ID + timestamp as unique group identifier
+            group_id = f"{id_part}_{timestamp_part}"
+            return group_id
+        elif len(parts) == 1:
+            # If only one part, use it as both ID and timestamp
+            return parts[0]
         else:
             # If no underscore, use the entire filename as identifier
             return filename_without_ext
@@ -677,7 +764,7 @@ class ImageLabelTool:
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             return {}
 
-        # Parcel images by their identifier (everything after 3rd underscore)
+        # Group images by their unique identifier (ID + Timestamp combination)
         parcels = {}
         for path in self.all_image_paths:
             parcel_id = self.get_parcel_number(path)
@@ -686,22 +773,34 @@ class ImageLabelTool:
                     parcels[parcel_id] = []
                 parcels[parcel_id].append(path)
 
-        # Calculate parcel labels based on rules
+        # Calculate parcel labels based on rules with new 7-category system
         parcel_labels_dict = {}
         
         for parcel_id, parcel_paths in parcels.items():
             parcel_image_labels = [self.labels.get(path, LABELS[0]) for path in parcel_paths]
             
-            # Apply parcel labeling rules
-            if "no read" in parcel_image_labels:
-                # If at least one image is "no read", parcel is "no read"
-                parcel_labels_dict[parcel_id] = "no read"
-            elif all(label in ["unlabeled", "no code"] for label in parcel_image_labels):
-                # If all images are "unlabeled" or "no code", parcel is "no code"
+            # Apply parcel labeling rules in priority order:
+            # 1. If any image has "read failure", parcel is "read failure" (technical issue)
+            if "read failure" in parcel_image_labels:
+                parcel_labels_dict[parcel_id] = "read failure"
+            # 2. If any image is "damaged", parcel is "damaged" (physical issue)
+            elif "damaged" in parcel_image_labels:
+                parcel_labels_dict[parcel_id] = "damaged"
+            # 3. If any image has "image quality" issues, parcel has "image quality" issues
+            elif "image quality" in parcel_image_labels:
+                parcel_labels_dict[parcel_id] = "image quality"
+            # 4. If any image is "occluded", parcel is "occluded"
+            elif "occluded" in parcel_image_labels:
+                parcel_labels_dict[parcel_id] = "occluded"
+            # 5. If any image is "other", parcel is "other"
+            elif "other" in parcel_image_labels:
+                parcel_labels_dict[parcel_id] = "other"
+            # 6. If all images are "(Unclassified)" or "no code", parcel is "no code"
+            elif all(label in ["(Unclassified)", "no code"] for label in parcel_image_labels):
                 parcel_labels_dict[parcel_id] = "no code"
+            # 7. Default: if mix of categories, parcel is "other"
             else:
-                # Mix of labeled images (including "unreadable"), parcel is "unreadable"
-                parcel_labels_dict[parcel_id] = "unreadable"
+                parcel_labels_dict[parcel_id] = "other"
                 
         return parcel_labels_dict
 
@@ -713,22 +812,23 @@ class ImageLabelTool:
 
         parcel_labels_dict = self.calculate_parcel_labels()
         
-        # Count parcels by label
-        parcel_labels = {"no code": 0, "no read": 0, "unreadable": 0}
-        for parcel_label in parcel_labels_dict.values():
-            if parcel_label in parcel_labels:
-                parcel_labels[parcel_label] += 1
+        # Count groups by label using all available categories
+        group_labels = {label: 0 for label in LABELS[1:]}  # Skip "(Unclassified)" 
+        for group_label in parcel_labels_dict.values():
+            if group_label in group_labels:
+                group_labels[group_label] += 1
 
-        total_parcels = len(parcel_labels_dict)
+        total_groups = len(parcel_labels_dict)
         
         # Multi-line format for better readability
-        lines = [f"Parcels ({total_parcels}):"]
-        for label, count in parcel_labels.items():
-            lines.append(f"  {label}: {count}")
+        lines = [f"Groups ({total_groups}):"]
+        for label, count in group_labels.items():
+            if count > 0:  # Only show categories that have groups
+                lines.append(f"  {label}: {count}")
         self.parcel_count_var.set("\n".join(lines))
 
     def update_total_stats(self):
-        """Calculate statistics against manually entered total parcels"""
+        """Calculate statistics against manually entered total groups"""
         try:
             total_entered = int(self.total_parcels_var.get()) if self.total_parcels_var.get() else 0
         except ValueError:
@@ -739,45 +839,42 @@ class ImageLabelTool:
             self.parcel_stats_var.set("")
             return
 
-        # Get current parcel counts
-        parcel_labels_dict = self.calculate_parcel_labels()
-        parcel_counts = {"no code": 0, "no read": 0, "unreadable": 0}
-        for parcel_label in parcel_labels_dict.values():
-            if parcel_label in parcel_counts:
-                parcel_counts[parcel_label] += 1
+        # Get current group counts using all available categories
+        group_labels_dict = self.calculate_parcel_labels()
+        group_counts = {label: 0 for label in LABELS[1:]}  # Skip "(Unclassified)"
+        for group_label in group_labels_dict.values():
+            if group_label in group_counts:
+                group_counts[group_label] += 1
 
-        # Calculate "read" as complement (total - no_read - unreadable)
-        read_count = total_entered - parcel_counts["no read"] - parcel_counts["unreadable"]
-        
-        # Calculate percentages
-        no_code_pct = (parcel_counts["no code"] / total_entered) * 100
-        no_read_pct = (parcel_counts["no read"] / total_entered) * 100
-        unreadable_pct = (parcel_counts["unreadable"] / total_entered) * 100
-        read_pct = (read_count / total_entered) * 100 if read_count >= 0 else 0
-
-        # Multi-line format for better readability
+        # Calculate percentages for each category
         lines = [f"Total {total_entered}:"]
-        lines.append(f"  no_code: {parcel_counts['no code']} ({no_code_pct:.1f}%)")
-        lines.append(f"  no_read: {parcel_counts['no read']} ({no_read_pct:.1f}%)")
-        lines.append(f"  unreadable: {parcel_counts['unreadable']} ({unreadable_pct:.1f}%)")
-        lines.append(f"  read: {read_count} ({read_pct:.1f}%)")
+        for label, count in group_counts.items():
+            if count > 0:  # Only show categories that have groups
+                percentage = (count / total_entered) * 100
+                lines.append(f"  {label}: {count} ({percentage:.1f}%)")
+        
+        # Calculate "classified" groups (all except no code)
+        classified_count = sum(count for label, count in group_counts.items() if label != "no code")
+        if classified_count > 0:
+            classified_pct = (classified_count / total_entered) * 100
+            lines.append(f"  classified: {classified_count} ({classified_pct:.1f}%)")
         
         self.parcel_stats_var.set("\n".join(lines))
 
     def auto_detect_total_groups(self):
-        """Auto-detect total number of groups by counting unique timestamps in filenames"""
+        """Auto-detect total number of groups by counting unique ID+Timestamp combinations in filenames"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             return
         
-        unique_timestamps = set()
+        unique_groups = set()
         for path in self.all_image_paths:
-            timestamp_id = self.get_parcel_number(path)
-            if timestamp_id:  # Only add non-empty timestamp IDs
-                unique_timestamps.add(timestamp_id)
+            group_id = self.get_parcel_number(path)
+            if group_id:  # Only add non-empty group IDs
+                unique_groups.add(group_id)
         
-        if len(unique_timestamps) > 0:
-            # Set the total parcels field with the count of unique timestamps
-            self.total_parcels_var.set(str(len(unique_timestamps)))
+        if len(unique_groups) > 0:
+            # Set the total parcels field with the count of unique ID+timestamp groups
+            self.total_parcels_var.set(str(len(unique_groups)))
             # Update statistics immediately
             self.update_total_stats()
 
@@ -842,12 +939,162 @@ class ImageLabelTool:
         """Perform panning with mouse drag"""
         self.canvas.scan_dragto(event.x, event.y, gain=1)
 
-    def auto_detect_function(self):
-        """Auto-detect function that returns a random integer between 0 and 3"""
-        return random.randint(0, 3)
+    def detect_barcode_count(self, image_path):
+        """Detect barcode in an image and return the count of detected barcodes"""
+        try:
+            # Log the start of detection
+            filename = os.path.basename(image_path)
+            self.logger.info(f"Starting barcode detection for: {filename}")
+            
+            # Read the image using OpenCV
+            image = cv2.imread(image_path)
+            if image is None:
+                self.logger.warning(f"Could not read image: {filename}")
+                return 0
+            
+            # Log image properties
+            height, width = image.shape[:2]
+            self.logger.info(f"Image dimensions: {width}x{height} pixels")
+            
+            # Convert to grayscale
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            
+            # Method 1: Look for barcode-like rectangular patterns
+            barcode_count_method1 = self._detect_barcode_patterns(gray)
+            self.logger.info(f"Method 1 (Pattern Detection) found: {barcode_count_method1} barcodes")
+            
+            # Method 2: If no patterns found, use gradient-based detection
+            barcode_count_method2 = 0
+            if barcode_count_method1 == 0:
+                barcode_count_method2 = self._detect_barcode_gradients(gray)
+                self.logger.info(f"Method 2 (Gradient Detection) found: {barcode_count_method2} barcodes")
+            
+            final_count = max(barcode_count_method1, barcode_count_method2)
+            
+            # Log the final result
+            if final_count > 0:
+                self.logger.info(f"✓ DETECTION SUCCESS: {final_count} barcode(s) detected in {filename}")
+            else:
+                self.logger.info(f"○ NO BARCODES: No barcodes detected in {filename}")
+            
+            return final_count
+            
+        except Exception as e:
+            # Log the error
+            self.logger.error(f"ERROR detecting barcode in {os.path.basename(image_path)}: {str(e)}")
+            return 0
+    
+    def _detect_barcode_patterns(self, gray):
+        """Detect barcodes using contour analysis"""
+        self.logger.debug("Using pattern detection method (morphological operations)")
+        
+        # Apply morphological operations to enhance barcode patterns
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (21, 7))
+        morphed = cv2.morphologyEx(gray, cv2.MORPH_CLOSE, kernel)
+        
+        # Apply threshold
+        _, binary = cv2.threshold(morphed, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        # Find contours
+        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        self.logger.debug(f"Found {len(contours)} contours in pattern detection")
+        
+        barcode_count = 0
+        
+        for i, contour in enumerate(contours):
+            x, y, w, h = cv2.boundingRect(contour)
+            aspect_ratio = w / h if h > 0 else 0
+            area = cv2.contourArea(contour)
+            
+            # Barcode characteristics: wide, not too tall, reasonable size
+            if (area > 500 and 
+                aspect_ratio > 2.5 and 
+                aspect_ratio < 15 and
+                w > 40 and h > 8):
+                barcode_count += 1
+                self.logger.debug(f"Pattern {i}: BARCODE CANDIDATE - area={area:.0f}, ratio={aspect_ratio:.2f}, size={w}x{h}")
+            else:
+                self.logger.debug(f"Pattern {i}: rejected - area={area:.0f}, ratio={aspect_ratio:.2f}, size={w}x{h}")
+        
+        return barcode_count
+    
+    def _detect_barcode_gradients(self, gray):
+        """Detect barcodes using gradient analysis"""
+        self.logger.debug("Using gradient detection method (edge analysis)")
+        
+        # Calculate gradient
+        grad_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        grad_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        
+        # Calculate gradient magnitude and direction
+        magnitude = cv2.magnitude(grad_x, grad_y)
+        
+        # Apply threshold to get strong edges
+        _, edges = cv2.threshold(magnitude, 50, 255, cv2.THRESH_BINARY)
+        edges = edges.astype(np.uint8)
+        
+        # Morphological operations to connect barcode lines
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 3))
+        morphed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+        
+        # Find contours
+        contours, _ = cv2.findContours(morphed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        self.logger.debug(f"Found {len(contours)} contours in gradient detection")
+        
+        barcode_count = 0
+        
+        for i, contour in enumerate(contours):
+            x, y, w, h = cv2.boundingRect(contour)
+            aspect_ratio = w / h if h > 0 else 0
+            area = cv2.contourArea(contour)
+            
+            # Look for horizontal patterns typical of barcodes
+            if (area > 200 and 
+                aspect_ratio > 1.5 and 
+                aspect_ratio < 20 and
+                w > 30):
+                
+                # Additional check: analyze the region for barcode-like patterns
+                roi = gray[y:y+h, x:x+w]
+                if roi.size > 0 and self._has_barcode_pattern(roi):
+                    barcode_count += 1
+                    self.logger.debug(f"Gradient {i}: BARCODE CANDIDATE - area={area:.0f}, ratio={aspect_ratio:.2f}, size={w}x{h}")
+                else:
+                    self.logger.debug(f"Gradient {i}: failed pattern test - area={area:.0f}, ratio={aspect_ratio:.2f}, size={w}x{h}")
+            else:
+                self.logger.debug(f"Gradient {i}: rejected - area={area:.0f}, ratio={aspect_ratio:.2f}, size={w}x{h}")
+        
+        return barcode_count
+    
+    def _has_barcode_pattern(self, roi):
+        """Check if a region has barcode-like vertical line patterns"""
+        if roi.shape[1] < 10:  # Too narrow
+            self.logger.debug("ROI too narrow for barcode pattern analysis")
+            return False
+        
+        # Calculate vertical profile (sum along columns)
+        vertical_profile = np.mean(roi, axis=0)
+        
+        # Count transitions from dark to light and vice versa
+        threshold = np.mean(vertical_profile)
+        binary_profile = vertical_profile > threshold
+        
+        transitions = 0
+        for i in range(1, len(binary_profile)):
+            if binary_profile[i] != binary_profile[i-1]:
+                transitions += 1
+        
+        # Barcodes should have many transitions (typically >6 for even simple codes)
+        has_pattern = transitions > 6
+        self.logger.debug(f"Pattern analysis: {transitions} transitions, {'PASS' if has_pattern else 'FAIL'}")
+        return has_pattern
 
-    def get_unlabeled_images(self):
-        """Get list of images that are not yet in the CSV (unlabeled)"""
+    def auto_detect_function(self, image_path):
+        """Auto-detect function that detects barcodes in an image"""
+        return self.detect_barcode_count(image_path)
+
+    def get_unclassified_images(self):
+        """Get list of images that are not yet in the CSV (unclassified)"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             return []
         
@@ -856,24 +1103,31 @@ class ImageLabelTool:
         if hasattr(self, 'labels') and self.labels:
             existing_labels = set(self.labels.keys())
         
-        # Find unlabeled images
-        unlabeled = []
+        # Find unclassified images
+        unclassified = []
         for path in self.all_image_paths:
             if path not in existing_labels:
-                unlabeled.append(path)
+                unclassified.append(path)
         
-        return unlabeled
+        return unclassified
 
     def auto_code_detection(self):
-        """Main auto code detection method that processes unlabeled images"""
+        """Main auto code classification method that processes unclassified images"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             messagebox.showwarning("No Images", "Please select a folder with images first.")
             return
         
-        unlabeled_images = self.get_unlabeled_images()
+        unclassified_images = self.get_unclassified_images()
         
-        if not unlabeled_images:
-            messagebox.showinfo("Complete", "All images are already labeled!")
+        # Log the start of auto-classification
+        self.logger.info("-" * 50)
+        self.logger.info("AUTO-CLASSIFICATION SESSION STARTED")
+        self.logger.info(f"Total images in folder: {len(self.all_image_paths)}")
+        self.logger.info(f"Unclassified images to process: {len(unclassified_images)}")
+        
+        if not unclassified_images:
+            self.logger.info("All images are already classified!")
+            messagebox.showinfo("Complete", "All images are already classified!")
             return
         
         # Disable the button and all UI controls during processing
@@ -881,27 +1135,37 @@ class ImageLabelTool:
         self.disable_ui_controls()
         
         # Start processing in a separate thread to avoid freezing the UI
-        processing_thread = threading.Thread(target=self.process_auto_detection, args=(unlabeled_images,))
+        processing_thread = threading.Thread(target=self.process_auto_detection, args=(unclassified_images,))
         processing_thread.daemon = True
         processing_thread.start()
 
-    def process_auto_detection(self, unlabeled_images):
-        """Process auto detection for unlabeled images in a separate thread"""
-        total_images = len(unlabeled_images)
+    def process_auto_detection(self, unclassified_images):
+        """Process auto classification for unclassified images in a separate thread"""
+        total_images = len(unclassified_images)
         processed = 0
+        no_code_count = 0
+        read_failure_count = 0
         
-        for image_path in unlabeled_images:
+        self.logger.info(f"Processing {total_images} unclassified images...")
+        
+        for image_path in unclassified_images:
             # Update progress on UI thread
             self.root.after(0, self.update_auto_detect_progress, processed, total_images, os.path.basename(image_path))
             
             # Get auto detection result
-            detection_result = self.auto_detect_function()
+            detection_result = self.auto_detect_function(image_path)
             
-            # Determine label based on result
+            # Determine label based on result with new 7-category system
             if detection_result == 0:
-                label = "no code"
+                label = "no code"  # No barcode detected
+                no_code_count += 1
             else:  # detection_result > 0
-                label = "no read"
+                label = "read failure"  # Barcode detected but not readable
+                read_failure_count += 1
+            
+            # Log the classification decision
+            filename = os.path.basename(image_path)
+            self.logger.info(f"CLASSIFIED: {filename} → {label} (barcode count: {detection_result})")
             
             # Update labels dictionary
             if not hasattr(self, 'labels'):
@@ -926,6 +1190,15 @@ class ImageLabelTool:
             
             processed += 1
         
+        # Log session summary
+        self.logger.info("-" * 30)
+        self.logger.info("AUTO-CLASSIFICATION SUMMARY:")
+        self.logger.info(f"Total processed: {total_images}")
+        self.logger.info(f"Classified as 'no code': {no_code_count}")
+        self.logger.info(f"Classified as 'read failure': {read_failure_count}")
+        self.logger.info("AUTO-CLASSIFICATION SESSION COMPLETED")
+        self.logger.info("-" * 50)
+        
         # Final update
         self.root.after(0, self.complete_auto_detection, total_images)
 
@@ -935,9 +1208,9 @@ class ImageLabelTool:
         self.auto_detect_progress_var.set(progress_text)
 
     def complete_auto_detection(self, total_processed):
-        """Complete the auto detection process"""
+        """Complete the auto classification process"""
         # Re-enable button and all UI controls
-        self.btn_auto_detect.config(state='normal', text="Auto Code Detection")
+        self.btn_auto_detect.config(state='normal', text="Auto no-code / code\nclassification")
         self.enable_ui_controls()
         
         # Update progress display
@@ -962,34 +1235,34 @@ class ImageLabelTool:
             # Stopping the timer
             self.stop_auto_timer()
 
-    def generate_no_read_folder(self):
-        """Generate a timestamped folder and copy all 'no read' images into it"""
+    def generate_read_failure_folder(self):
+        """Generate a timestamped folder and copy all 'read failure' images into it"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             messagebox.showwarning("No Images", "Please select a folder with images first.")
             return
         
-        # Find all 'no read' images
-        no_read_images = [path for path in self.all_image_paths 
-                         if path in self.labels and self.labels[path] == "no read"]
+        # Find all 'read failure' images
+        read_failure_images = [path for path in self.all_image_paths 
+                         if path in self.labels and self.labels[path] == "read failure"]
         
-        if not no_read_images:
-            messagebox.showinfo("No Images", "No 'no read' images found to copy.")
+        if not read_failure_images:
+            messagebox.showinfo("No Images", "No 'read failure' images found to copy.")
             return
         
         # Disable button during processing
         self.btn_gen_no_read.config(state='disabled', text="Generating...")
         
         # Use the progress display for feedback
-        self.auto_detect_progress_var.set(f"Preparing to copy {len(no_read_images)} 'no read' images...")
+        self.auto_detect_progress_var.set(f"Preparing to copy {len(read_failure_images)} 'read failure' images...")
         
         # Start processing in a separate thread to avoid freezing the UI
         import threading
-        processing_thread = threading.Thread(target=self.process_no_read_copy, args=(no_read_images,))
+        processing_thread = threading.Thread(target=self.process_read_failure_copy, args=(read_failure_images,))
         processing_thread.daemon = True
         processing_thread.start()
 
-    def process_no_read_copy(self, no_read_images):
-        """Process copying no read images in a separate thread"""
+    def process_read_failure_copy(self, read_failure_images):
+        """Process copying read failure images in a separate thread"""
         import shutil
         from datetime import datetime
         
@@ -1000,16 +1273,16 @@ class ImageLabelTool:
                 
             # Create timestamped folder name
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            folder_name = f"no_read_{timestamp}"
+            folder_name = f"read_failure_{timestamp}"
             destination_folder = os.path.join(self.folder_path, folder_name)
             
             # Create the directory
             os.makedirs(destination_folder, exist_ok=True)
             
-            total_images = len(no_read_images)
+            total_images = len(read_failure_images)
             copied = 0
             
-            for image_path in no_read_images:
+            for image_path in read_failure_images:
                 # Update progress on UI thread
                 filename = os.path.basename(image_path)
                 self.root.after(0, self.update_copy_progress, copied + 1, total_images, filename)
@@ -1025,7 +1298,7 @@ class ImageLabelTool:
                 time.sleep(0.05)
             
             # Completion
-            self.root.after(0, self.complete_no_read_copy, total_images, folder_name)
+            self.root.after(0, self.complete_read_failure_copy, total_images, folder_name)
             
         except Exception as e:
             # Error handling
@@ -1036,22 +1309,22 @@ class ImageLabelTool:
         progress_text = f"Copying {current}/{total}\n{filename}"
         self.auto_detect_progress_var.set(progress_text)
 
-    def complete_no_read_copy(self, total_copied, folder_name):
+    def complete_read_failure_copy(self, total_copied, folder_name):
         """Complete the copy operation"""
         # Re-enable button
-        self.btn_gen_no_read.config(state='normal', text="Gen No Read Folder")
+        self.btn_gen_no_read.config(state='normal', text="Gen Read Failure\nFolder")
         
         # Show completion message
         self.auto_detect_progress_var.set(f"Completed!\nCopied {total_copied} images to:\n{folder_name}")
         
         # Show success dialog
         messagebox.showinfo("Copy Complete", 
-                          f"Successfully copied {total_copied} 'no read' images to folder:\n{folder_name}")
+                          f"Successfully copied {total_copied} 'read failure' images to folder:\n{folder_name}")
 
     def copy_error(self, error_message):
         """Handle copy operation errors"""
         # Re-enable button
-        self.btn_gen_no_read.config(state='normal', text="Gen No Read Folder")
+        self.btn_gen_no_read.config(state='normal', text="Gen Read Failure\nFolder")
         
         # Show error message
         self.auto_detect_progress_var.set("Copy failed!")
@@ -1081,7 +1354,7 @@ class ImageLabelTool:
         self.auto_timer_job = self.root.after(interval_ms, self.run_auto_detection_timer)
         
         # Start countdown display
-        self.auto_timer_status_var.set("Auto-detection enabled")
+        self.auto_timer_status_var.set("Auto-classification enabled")
         self.start_countdown(interval_minutes)
         
     def stop_auto_timer(self):
@@ -1101,7 +1374,7 @@ class ImageLabelTool:
         # Re-enable all controls when auto-timer is stopped
         self.enable_ui_controls()
         
-        self.auto_timer_status_var.set("Auto-detection disabled")
+        self.auto_timer_status_var.set("Auto-classification disabled")
 
     def start_countdown(self, interval_minutes):
         """Start the countdown timer display"""
@@ -1125,7 +1398,7 @@ class ImageLabelTool:
         
         if now >= self.countdown_end_time:
             # Countdown finished
-            self.auto_timer_status_var.set("Auto-detection running...")
+            self.auto_timer_status_var.set("Auto-classification running...")
             return
             
         # Calculate remaining time
@@ -1205,32 +1478,32 @@ class ImageLabelTool:
         new_images = self.scan_for_new_images()
         
         if new_images:
-            self.auto_timer_status_var.set(f"Found {len(new_images)} new images!\nProcessing unlabeled images...")
+            self.auto_timer_status_var.set(f"Found {len(new_images)} new images!\nProcessing unclassified images...")
         else:
-            self.auto_timer_status_var.set("No new images found.\nChecking unlabeled images...")
+            self.auto_timer_status_var.set("No new images found.\nChecking unclassified images...")
         
-        # Run auto detection silently (no popup)
+        # Run auto classification silently (no popup)
         if hasattr(self, 'all_image_paths') and self.all_image_paths:
-            unlabeled_images = self.get_unlabeled_images()
+            unclassified_images = self.get_unclassified_images()
             
-            if unlabeled_images:
+            if unclassified_images:
                 # Show different message based on whether we found new images
                 if new_images:
-                    new_unlabeled = [img for img in new_images if img in unlabeled_images]
-                    if new_unlabeled:
-                        self.auto_timer_status_var.set(f"Processing {len(new_unlabeled)} new unlabeled images\n(Total unlabeled: {len(unlabeled_images)})")
+                    new_unclassified = [img for img in new_images if img in unclassified_images]
+                    if new_unclassified:
+                        self.auto_timer_status_var.set(f"Processing {len(new_unclassified)} new unclassified images\n(Total unclassified: {len(unclassified_images)})")
                     else:
-                        self.auto_timer_status_var.set(f"New images already labeled\nProcessing {len(unlabeled_images)} unlabeled images")
+                        self.auto_timer_status_var.set(f"New images already classified\nProcessing {len(unclassified_images)} unclassified images")
                 else:
-                    self.auto_timer_status_var.set(f"Processing {len(unlabeled_images)} unlabeled images")
+                    self.auto_timer_status_var.set(f"Processing {len(unclassified_images)} unclassified images")
                 
-                # Run detection in background (controls already disabled)
-                self.process_auto_detection_silent(unlabeled_images)
+                # Run classification in background (controls already disabled)
+                self.process_auto_detection_silent(unclassified_images)
             else:
                 if new_images:
-                    self.auto_timer_status_var.set(f"Found {len(new_images)} new images\nAll images are now labeled!")
+                    self.auto_timer_status_var.set(f"Found {len(new_images)} new images\nAll images are now classified!")
                 else:
-                    self.auto_timer_status_var.set("No new images found\nAll existing images labeled")
+                    self.auto_timer_status_var.set("No new images found\nAll existing images classified")
         
         # Schedule next run directly without validation (we already validated when starting)
         if self.auto_timer_enabled.get():
@@ -1246,7 +1519,7 @@ class ImageLabelTool:
                 self.stop_auto_timer()
 
     def disable_ui_controls(self):
-        """Disable all UI controls except the Stop button during auto-detection"""
+        """Disable all UI controls except the Stop button during auto-classification"""
         # Disable navigation buttons
         self.btn_prev.config(state='disabled')
         self.btn_next.config(state='disabled')
@@ -1268,7 +1541,7 @@ class ImageLabelTool:
         # Note: auto_timer_entry is already disabled when timer is running
 
     def enable_ui_controls(self):
-        """Re-enable all UI controls after auto-detection completes"""
+        """Re-enable all UI controls after auto-classification completes"""
         # Enable navigation buttons
         self.btn_prev.config(state='normal')
         self.btn_next.config(state='normal')
@@ -1288,25 +1561,37 @@ class ImageLabelTool:
         # Enable entry fields
         self.total_parcels_entry.config(state='normal')
 
-    def process_auto_detection_silent(self, unlabeled_images):
-        """Process auto detection silently without popup dialogs"""
-        total_images = len(unlabeled_images)
+    def process_auto_detection_silent(self, unclassified_images):
+        """Process auto classification silently without popup dialogs"""
+        total_images = len(unclassified_images)
         processed = 0
+        no_code_count = 0
+        read_failure_count = 0
         
-        for image_path in unlabeled_images:
+        self.logger.info("-" * 50)
+        self.logger.info("AUTO-CLASSIFICATION (TIMER) SESSION STARTED")
+        self.logger.info(f"Unclassified images to process: {total_images}")
+        
+        for image_path in unclassified_images:
             # Update progress indicator
             processed += 1
             self.auto_timer_status_var.set(f"Processing {processed}/{total_images}\n{os.path.basename(image_path)}")
             self.root.update_idletasks()  # Force UI update
             
             # Get auto detection result
-            detection_result = self.auto_detect_function()
+            detection_result = self.auto_detect_function(image_path)
             
             # Determine label based on result
             if detection_result == 0:
                 label = "no code"
+                no_code_count += 1
             else:  # detection_result > 0
-                label = "no read"
+                label = "read failure"
+                read_failure_count += 1
+            
+            # Log the classification decision
+            filename = os.path.basename(image_path)
+            self.logger.info(f"TIMER-CLASSIFIED: {filename} → {label} (barcode count: {detection_result})")
             
             # Update labels dictionary
             if not hasattr(self, 'labels'):
@@ -1326,9 +1611,19 @@ class ImageLabelTool:
         self.update_progress_display()
         self.update_counts()
         
-        # Update status with completion info
+        # Log session summary
         completion_time = datetime.now().strftime("%H:%M:%S")
-        self.auto_timer_status_var.set(f"Auto-detection complete at {completion_time}\nProcessed {total_images} images")
+        self.logger.info("-" * 30)
+        self.logger.info("AUTO-CLASSIFICATION (TIMER) SUMMARY:")
+        self.logger.info(f"Total processed: {total_images}")
+        self.logger.info(f"Classified as 'no code': {no_code_count}")
+        self.logger.info(f"Classified as 'read failure': {read_failure_count}")
+        self.logger.info(f"Completed at: {completion_time}")
+        self.logger.info("AUTO-CLASSIFICATION (TIMER) SESSION COMPLETED")
+        self.logger.info("-" * 50)
+        
+        # Update status with completion info
+        self.auto_timer_status_var.set(f"Auto-classification complete at {completion_time}\nProcessed {total_images} images")
 
 if __name__ == "__main__":
     try:
