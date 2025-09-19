@@ -32,6 +32,13 @@ class ImageLabelTool:
         self.pan_start_x = 0  # For mouse panning
         self.pan_start_y = 0  # For mouse panning
         
+        # Track previously seen files for new file detection
+        self.previously_seen_files = set()
+        
+        # Parcel index tracking
+        self.parcel_indices = {}  # Maps parcel_id to parcel_index
+        self.next_parcel_index = 1  # Next index to assign to a newly classified parcel
+        
         # Set up logging for barcode detection
         self.setup_logging()
         
@@ -93,10 +100,10 @@ class ImageLabelTool:
                                   padx=20, pady=8, relief="flat")
         self.btn_select.pack(side=tk.LEFT)
         
-        # Total groups input (right side)
+        # Total number of parcels input (right side)
         total_frame = tk.Frame(top_frame, bg="#FAFAFA")
         total_frame.pack(side=tk.RIGHT)
-        tk.Label(total_frame, text="Total Groups:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
+        tk.Label(total_frame, text="Total number of parcels:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
         self.total_parcels_var = tk.StringVar()
         self.total_parcels_entry = tk.Entry(total_frame, textvariable=self.total_parcels_var, width=10,
                                           font=("Arial", 10), bg="white", relief="solid", bd=1)
@@ -216,6 +223,12 @@ class ImageLabelTool:
         self.status = tk.Label(center_panel, textvariable=self.status_var, bg="#FAFAFA", 
                              font=("Arial", 10), fg="#424242")
         self.status.pack(pady=(10, 5))
+        
+        # Add parcel index display
+        self.parcel_index_var = tk.StringVar()
+        self.parcel_index_label = tk.Label(center_panel, textvariable=self.parcel_index_var, bg="#FAFAFA",
+                                         font=("Arial", 10), fg="#424242")
+        self.parcel_index_label.pack(pady=(0, 5))
 
         # Navigation and radio buttons for labels (below image)
         self.label_var = tk.StringVar(value=LABELS[0])
@@ -280,6 +293,13 @@ class ImageLabelTool:
                                 bg="#90CAF9", fg="white", font=("Arial", 10, "bold"),
                                 padx=15, pady=8, relief="flat")
         self.btn_next.pack(side=tk.RIGHT, padx=(15, 0))
+        
+        # Jump to Next Unclassified button (right side)
+        self.btn_jump_unclassified = tk.Button(nav_label_container, text="Jump to Next Unclassified", 
+                                              command=self.jump_to_next_unclassified,
+                                              bg="#FF9800", fg="white", font=("Arial", 10, "bold"),
+                                              padx=15, pady=8, relief="flat")
+        self.btn_jump_unclassified.pack(side=tk.RIGHT, padx=(15, 0))
 
         # === RIGHT PANEL: Statistics ===
         tk.Label(right_panel, text="Statistics", bg="#FAFAFA", font=("Arial", 11, "bold"), fg="#424242").pack(pady=(0, 15))
@@ -308,7 +328,7 @@ class ImageLabelTool:
         parcel_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=10, pady=10)
         parcel_section.pack(fill=tk.X, pady=(0, 10))
         
-        tk.Label(parcel_section, text="Group Summary", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#81C784").pack()
+        tk.Label(parcel_section, text="Parcel count", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#81C784").pack()
         self.parcel_count_var = tk.StringVar()
         self.parcel_count_label = tk.Label(parcel_section, textvariable=self.parcel_count_var, 
                                          font=("Arial", 9), bg="#F5F5F5", fg="#424242", wraplength=220)
@@ -318,7 +338,7 @@ class ImageLabelTool:
         total_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=10, pady=10)
         total_section.pack(fill=tk.X, pady=(0, 10))
         
-        tk.Label(total_section, text="Total Analysis", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#5E88D8").pack()
+        tk.Label(total_section, text="Net Stats", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#5E88D8").pack()
         self.parcel_stats_var = tk.StringVar()
         self.parcel_stats_label = tk.Label(total_section, textvariable=self.parcel_stats_var, 
                                          font=("Arial", 9), fg="#424242", bg="#F5F5F5", wraplength=220)
@@ -328,13 +348,16 @@ class ImageLabelTool:
         auto_detect_section = tk.Frame(right_panel, bg="#FFF3E0", relief="solid", bd=1, padx=10, pady=10)
         auto_detect_section.pack(fill=tk.X, pady=(0, 10))
         
-        tk.Label(auto_detect_section, text="Auto Classification", bg="#FFF3E0", font=("Arial", 10, "bold"), fg="#F57C00").pack()
+        tk.Label(auto_detect_section, text="Auto detect new files", bg="#FFF3E0", font=("Arial", 10, "bold"), fg="#F57C00").pack()
         
-        self.btn_auto_detect = tk.Button(auto_detect_section, text="Auto no-code / code\nclassification", 
-                                       command=self.auto_code_detection,
-                                       bg="#FF9800", fg="white", font=("Arial", 9, "bold"),
-                                       padx=20, pady=5, relief="flat")
-        self.btn_auto_detect.pack(pady=(10, 5))
+        # Checkbox for auto barcode detection on new files
+        self.auto_detect_enabled = tk.BooleanVar(value=False)
+        self.auto_detect_checkbox = tk.Checkbutton(auto_detect_section, 
+                                                 text="Auto detect barcodes on new files",
+                                                 variable=self.auto_detect_enabled,
+                                                 bg="#FFF3E0", font=("Arial", 9),
+                                                 anchor="w", justify="left")
+        self.auto_detect_checkbox.pack(pady=(10, 5), fill=tk.X)
         
         # Progress indicator for auto classification
         self.auto_detect_progress_var = tk.StringVar()
@@ -419,8 +442,12 @@ class ImageLabelTool:
         self.all_image_paths.sort()
         self.current_index = 0
         self.labels = {}  # Reset labels for new folder
+        
+        # Initialize previously seen files with current files
+        self.previously_seen_files = set(self.all_image_paths)
+        
         self.load_csv()  # Try to load existing CSV if any
-        self.auto_detect_total_groups()  # Auto-detect total groups from filenames
+        self.auto_detect_total_groups()  # Auto-detect total number of parcels from filenames
         self.apply_filter()  # Apply current filter to show appropriate images
 
     def show_image(self):
@@ -511,6 +538,7 @@ class ImageLabelTool:
         # Update progress and label status
         self.update_progress_display()
         self.update_current_label_status()
+        self.update_parcel_index_display()
 
     def prev_image(self):
         if self.current_index > 0:
@@ -521,6 +549,29 @@ class ImageLabelTool:
         if self.current_index < len(self.image_paths) - 1:
             self.current_index += 1
             self.show_image()
+
+    def jump_to_next_unclassified(self):
+        """Jump to the next unclassified image after the current index."""
+        if not self.image_paths:
+            return
+        
+        # Start searching from the next image after current
+        start_index = (self.current_index + 1) % len(self.image_paths)
+        
+        # Search for the next unclassified image
+        for i in range(len(self.image_paths)):
+            check_index = (start_index + i) % len(self.image_paths)
+            path = self.image_paths[check_index]
+            
+            # Check if image is unclassified
+            if path not in self.labels or self.labels[path] == "(Unclassified)":
+                self.current_index = check_index
+                self.show_image()
+                return
+        
+        # If no unclassified images found, show a message
+        import tkinter.messagebox as messagebox
+        messagebox.showinfo("Navigation", "No unclassified images found.")
 
     def set_label(self, value):
         if not self.image_paths:
@@ -534,6 +585,10 @@ class ImageLabelTool:
         if not self.image_paths:
             return
         path = self.image_paths[self.current_index]
+        
+        # Assign parcel index if this is the first classification for this parcel
+        self.assign_parcel_index_if_needed(path)
+        
         self.labels[path] = self.label_var.get()
         self.save_csv()
         self.update_counts()
@@ -541,6 +596,7 @@ class ImageLabelTool:
         self.update_total_stats()
         self.update_progress_display()
         self.update_current_label_status()
+        self.update_parcel_index_display()
         
         # If filtering is active, reapply filter in case current image no longer matches
         if self.filter_var.get() != "All images":
@@ -553,41 +609,77 @@ class ImageLabelTool:
                 self.current_index = 0
             self.show_image()
 
+    def assign_parcel_index_if_needed(self, image_path):
+        """Assign a parcel index to a parcel when it gets its first classification"""
+        parcel_id = self.get_parcel_number(image_path)
+        if not parcel_id:
+            return  # No parcel ID, can't assign index
+            
+        # Check if this parcel already has an index
+        if parcel_id in self.parcel_indices:
+            return  # Already has an index
+            
+        # Check if this parcel has any classified images (other than the current one being set)
+        parcel_has_classified_images = False
+        for path in self.all_image_paths:
+            if self.get_parcel_number(path) == parcel_id and path != image_path:
+                if path in self.labels and self.labels[path] != "(Unclassified)":
+                    parcel_has_classified_images = True
+                    break
+        
+        # If this is the first classification for this parcel, assign an index
+        if not parcel_has_classified_images:
+            self.parcel_indices[parcel_id] = self.next_parcel_index
+            self.next_parcel_index += 1
+
+    def get_parcel_index(self, image_path):
+        """Get the parcel index for an image, or None if parcel is unclassified"""
+        parcel_id = self.get_parcel_number(image_path)
+        if not parcel_id:
+            return None
+        return self.parcel_indices.get(parcel_id, None)
+
     def label_shortcut_q(self, event=None):
         """Keyboard shortcut: Q for 'no code'"""
         if self.image_paths:
             self.label_var.set("no code")
             self.set_label_radio()
+            self.jump_to_next_unclassified()
 
     def label_shortcut_w(self, event=None):
         """Keyboard shortcut: W for 'read failure'"""
         if self.image_paths:
             self.label_var.set("read failure")
             self.set_label_radio()
+            self.jump_to_next_unclassified()
 
     def label_shortcut_e(self, event=None):
         """Keyboard shortcut: E for 'occluded'"""
         if self.image_paths:
             self.label_var.set("occluded")
             self.set_label_radio()
+            self.jump_to_next_unclassified()
 
     def label_shortcut_r(self, event=None):
         """Keyboard shortcut: R for 'image quality'"""
         if self.image_paths:
             self.label_var.set("image quality")
             self.set_label_radio()
+            self.jump_to_next_unclassified()
 
     def label_shortcut_t(self, event=None):
         """Keyboard shortcut: T for 'damaged'"""
         if self.image_paths:
             self.label_var.set("damaged")
             self.set_label_radio()
+            self.jump_to_next_unclassified()
 
     def label_shortcut_y(self, event=None):
         """Keyboard shortcut: Y for 'other'"""
         if self.image_paths:
             self.label_var.set("other")
             self.set_label_radio()
+            self.jump_to_next_unclassified()
 
     def prev_image_shortcut(self, event=None):
         """Keyboard shortcut: Left arrow for previous image"""
@@ -640,8 +732,14 @@ class ImageLabelTool:
         self.update_parcel_stats()
         self.update_total_stats()
         self.update_progress_display()
+        if self.image_paths:  # Only update if there are images loaded
+            self.update_parcel_index_display()
 
     def load_csv(self):
+        # Reset parcel indices when loading
+        self.parcel_indices = {}
+        self.next_parcel_index = 1
+        
         if not self.csv_filename or not os.path.exists(self.csv_filename):
             # Try to find existing revision CSV files in the folder
             if self.folder_path:
@@ -666,19 +764,37 @@ class ImageLabelTool:
                     
                     if most_recent_file:
                         existing_csv = os.path.join(self.folder_path, most_recent_file)
-                        with open(existing_csv, newline='', encoding='utf-8') as f:
-                            reader = csv.reader(f)
-                            next(reader, None)  # Skip header if present
-                            for row in reader:
-                                if len(row) >= 2:  # Support both old and new format
-                                    self.labels[row[0]] = row[1]
+                        self._load_csv_file(existing_csv)
             return
-        with open(self.csv_filename, newline='', encoding='utf-8') as f:
+        self._load_csv_file(self.csv_filename)
+
+    def _load_csv_file(self, filepath):
+        """Helper method to load CSV file and restore parcel indices"""
+        max_parcel_index = 0
+        
+        with open(filepath, newline='', encoding='utf-8') as f:
             reader = csv.reader(f)
-            next(reader, None)  # Skip header if present
+            header = next(reader, None)  # Read header
+            
             for row in reader:
-                if len(row) >= 2:  # Support both old and new format
-                    self.labels[row[0]] = row[1]
+                if len(row) >= 2:  # At minimum need image_path and image_label
+                    image_path = row[0]
+                    image_label = row[1]
+                    self.labels[image_path] = image_label
+                    
+                    # If parcel_index column exists and has a value, restore the parcel index
+                    if len(row) >= 5 and row[4]:  # parcel_index is 5th column (index 4)
+                        try:
+                            parcel_index = int(row[4])
+                            parcel_id = self.get_parcel_number(image_path)
+                            if parcel_id:
+                                self.parcel_indices[parcel_id] = parcel_index
+                                max_parcel_index = max(max_parcel_index, parcel_index)
+                        except (ValueError, TypeError):
+                            pass  # Skip invalid parcel index values
+        
+        # Set next_parcel_index to be one more than the highest existing index
+        self.next_parcel_index = max_parcel_index + 1
 
     def save_csv(self):
         if not self.csv_filename:
@@ -686,7 +802,7 @@ class ImageLabelTool:
         with open(self.csv_filename, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             # Write header
-            writer.writerow(['image_path', 'image_label', 'parcel_number', 'parcel_label'])
+            writer.writerow(['image_path', 'image_label', 'parcel_number', 'parcel_label', 'parcel_index'])
             
             # Calculate current parcel labels
             parcel_labels_dict = self.calculate_parcel_labels()
@@ -694,13 +810,23 @@ class ImageLabelTool:
             for path, label in self.labels.items():
                 parcel_id = self.get_parcel_number(path)
                 parcel_label = parcel_labels_dict.get(parcel_id, "no code") if parcel_id else "no code"
-                writer.writerow([path, label, parcel_id or "", parcel_label])
+                parcel_index = self.get_parcel_index(path)
+                writer.writerow([path, label, parcel_id or "", parcel_label, parcel_index or ""])
 
     def update_counts(self):
         counts = {label: 0 for label in LABELS}
-        for label in self.labels.values():
-            if label in counts:
-                counts[label] += 1
+        
+        # Count all images, including unclassified ones
+        if hasattr(self, 'all_image_paths') and self.all_image_paths:
+            for path in self.all_image_paths:
+                if path in self.labels and self.labels[path] != "(Unclassified)":
+                    # Image has a real classification
+                    label = self.labels[path]
+                    if label in counts:
+                        counts[label] += 1
+                else:
+                    # Image is unclassified
+                    counts["(Unclassified)"] += 1
         
         # Multi-line format for better readability
         lines = ["Images:"]
@@ -737,6 +863,20 @@ class ImageLabelTool:
             # Image is unclassified
             self.label_status_var.set("○ UNCLASSIFIED")
             self.label_status_label.config(fg="#EF9A9A")  # Soft red
+    
+    def update_parcel_index_display(self):
+        """Update the parcel index display for current image."""
+        if not self.image_paths:
+            self.parcel_index_var.set("")
+            return
+        
+        current_path = self.image_paths[self.current_index]
+        parcel_index = self.get_parcel_index(current_path)
+        
+        if parcel_index is not None:
+            self.parcel_index_var.set(f"Parcel Index: {parcel_index}")
+        else:
+            self.parcel_index_var.set("Parcel Index: None")
 
     def get_parcel_number(self, image_path):
         """Extract the group ID from filename using ID (first part) + Timestamp (last part)"""
@@ -779,24 +919,31 @@ class ImageLabelTool:
         for parcel_id, parcel_paths in parcels.items():
             parcel_image_labels = [self.labels.get(path, LABELS[0]) for path in parcel_paths]
             
+            # Only include parcels that have at least one classified image
+            classified_labels = [label for label in parcel_image_labels if label != "(Unclassified)"]
+            
+            if not classified_labels:
+                # Skip parcels with no classified images
+                continue
+            
             # Apply parcel labeling rules in priority order:
             # 1. If any image has "read failure", parcel is "read failure" (technical issue)
-            if "read failure" in parcel_image_labels:
+            if "read failure" in classified_labels:
                 parcel_labels_dict[parcel_id] = "read failure"
             # 2. If any image is "damaged", parcel is "damaged" (physical issue)
-            elif "damaged" in parcel_image_labels:
+            elif "damaged" in classified_labels:
                 parcel_labels_dict[parcel_id] = "damaged"
             # 3. If any image has "image quality" issues, parcel has "image quality" issues
-            elif "image quality" in parcel_image_labels:
+            elif "image quality" in classified_labels:
                 parcel_labels_dict[parcel_id] = "image quality"
             # 4. If any image is "occluded", parcel is "occluded"
-            elif "occluded" in parcel_image_labels:
+            elif "occluded" in classified_labels:
                 parcel_labels_dict[parcel_id] = "occluded"
             # 5. If any image is "other", parcel is "other"
-            elif "other" in parcel_image_labels:
+            elif "other" in classified_labels:
                 parcel_labels_dict[parcel_id] = "other"
-            # 6. If all images are "(Unclassified)" or "no code", parcel is "no code"
-            elif all(label in ["(Unclassified)", "no code"] for label in parcel_image_labels):
+            # 6. If ALL classified images are "no code", parcel is "no code"
+            elif all(label == "no code" for label in classified_labels):
                 parcel_labels_dict[parcel_id] = "no code"
             # 7. Default: if mix of categories, parcel is "other"
             else:
@@ -812,23 +959,37 @@ class ImageLabelTool:
 
         parcel_labels_dict = self.calculate_parcel_labels()
         
-        # Count groups by label using all available categories
-        group_labels = {label: 0 for label in LABELS[1:]}  # Skip "(Unclassified)" 
-        for group_label in parcel_labels_dict.values():
-            if group_label in group_labels:
-                group_labels[group_label] += 1
-
-        total_groups = len(parcel_labels_dict)
+        # Count parcels by different categories
+        total_parcels = len(parcel_labels_dict)
+        parcels_no_code = 0
+        parcels_read_failure = 0
         
-        # Multi-line format for better readability
-        lines = [f"Groups ({total_groups}):"]
-        for label, count in group_labels.items():
-            if count > 0:  # Only show categories that have groups
-                lines.append(f"  {label}: {count}")
+        for parcel_label in parcel_labels_dict.values():
+            if parcel_label == "no code":
+                parcels_no_code += 1
+            elif parcel_label == "read failure":
+                parcels_read_failure += 1
+        
+        # Calculate total readable parcels using expected total from text field
+        try:
+            total_entered = int(self.total_parcels_var.get()) if self.total_parcels_var.get() else 0
+            # Total readable = Total number of parcel - number of parcels + Parcels with read failure
+            total_readable = total_entered - total_parcels + parcels_read_failure
+        except ValueError:
+            total_readable = "N/A (Enter expected total)"
+        
+        # Format the display
+        lines = [
+            f"Number of parcels: {total_parcels}",
+            f"Parcels with no code: {parcels_no_code}",
+            f"Parcels with read failure: {parcels_read_failure}",
+            f"Total readable parcels: {total_readable}"
+        ]
+        
         self.parcel_count_var.set("\n".join(lines))
 
     def update_total_stats(self):
-        """Calculate statistics against manually entered total groups"""
+        """Calculate statistics against manually entered total number of parcels"""
         try:
             total_entered = int(self.total_parcels_var.get()) if self.total_parcels_var.get() else 0
         except ValueError:
@@ -839,25 +1000,35 @@ class ImageLabelTool:
             self.parcel_stats_var.set("")
             return
 
-        # Get current group counts using all available categories
-        group_labels_dict = self.calculate_parcel_labels()
-        group_counts = {label: 0 for label in LABELS[1:]}  # Skip "(Unclassified)"
-        for group_label in group_labels_dict.values():
-            if group_label in group_counts:
-                group_counts[group_label] += 1
-
-        # Calculate percentages for each category
-        lines = [f"Total {total_entered}:"]
-        for label, count in group_counts.items():
-            if count > 0:  # Only show categories that have groups
-                percentage = (count / total_entered) * 100
-                lines.append(f"  {label}: {count} ({percentage:.1f}%)")
+        # Get current parcel statistics
+        parcel_labels_dict = self.calculate_parcel_labels()
+        actual_parcels = len(parcel_labels_dict)
         
-        # Calculate "classified" groups (all except no code)
-        classified_count = sum(count for label, count in group_counts.items() if label != "no code")
-        if classified_count > 0:
-            classified_pct = (classified_count / total_entered) * 100
-            lines.append(f"  classified: {classified_count} ({classified_pct:.1f}%)")
+        parcels_no_code = 0
+        parcels_read_failure = 0
+        
+        for parcel_label in parcel_labels_dict.values():
+            if parcel_label == "no code":
+                parcels_no_code += 1
+            elif parcel_label == "read failure":
+                parcels_read_failure += 1
+        
+        # Calculate readable parcels: Total number of parcel - number of parcels + Parcels with read failure
+        total_readable = total_entered - actual_parcels + parcels_read_failure
+        
+        lines = []
+        
+        # Gross read rate: (Total number of parcels) minus (Number of parcels) out of (Total number of parcels)
+        if total_entered > 0:
+            gross_numerator = total_entered - actual_parcels
+            gross_read_rate = (gross_numerator / total_entered) * 100
+            lines.append(f"Gross read rate: {gross_numerator}/{total_entered} ({gross_read_rate:.1f}%)")
+        
+        # Net read rate: (Total number of readable parcels) minus (Parcels with read failure) out of (Total number of readable parcels)
+        if total_readable > 0:
+            net_numerator = total_readable - parcels_read_failure
+            net_read_rate = (net_numerator / total_readable) * 100
+            lines.append(f"Net read rate: {net_numerator}/{total_readable} ({net_read_rate:.1f}%)")
         
         self.parcel_stats_var.set("\n".join(lines))
 
@@ -1093,6 +1264,51 @@ class ImageLabelTool:
         """Auto-detect function that detects barcodes in an image"""
         return self.detect_barcode_count(image_path)
 
+    def check_for_new_files(self):
+        """Check for new image files in the folder that weren't seen before"""
+        if not hasattr(self, 'folder_path') or not self.folder_path:
+            return []
+        
+        # Scan current folder for all image files
+        try:
+            all_files = [f for f in os.listdir(self.folder_path)
+                        if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif"))]
+            
+            current_image_paths = []
+            for f in all_files:
+                current_image_paths.append(os.path.join(self.folder_path, f))
+            
+            current_image_paths_set = set(current_image_paths)
+            
+            # Find new files (not in previously seen files)
+            new_files = current_image_paths_set - self.previously_seen_files
+            
+            # Update our records
+            if new_files:
+                self.previously_seen_files.update(new_files)
+                # Also update all_image_paths to include new files
+                self.all_image_paths = sorted(current_image_paths)
+                # Refresh the display if needed
+                self.apply_filter()
+            
+            return list(new_files)
+            
+        except OSError as e:
+            self.logger.error(f"Error scanning folder for new files: {e}")
+            return []
+
+    def get_new_unlabeled_files(self):
+        """Get list of newly added files that are unlabeled"""
+        new_files = self.check_for_new_files()
+        
+        # Filter to only unlabeled files
+        new_unlabeled = []
+        for file_path in new_files:
+            if file_path not in self.labels or self.labels[file_path] == "(Unclassified)":
+                new_unlabeled.append(file_path)
+        
+        return new_unlabeled
+
     def get_unclassified_images(self):
         """Get list of images that are not yet in the CSV (unclassified)"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
@@ -1130,8 +1346,7 @@ class ImageLabelTool:
             messagebox.showinfo("Complete", "All images are already classified!")
             return
         
-        # Disable the button and all UI controls during processing
-        self.btn_auto_detect.config(state='disabled', text="Processing...")
+        # Disable all UI controls during processing (no button to disable)
         self.disable_ui_controls()
         
         # Start processing in a separate thread to avoid freezing the UI
@@ -1209,8 +1424,7 @@ class ImageLabelTool:
 
     def complete_auto_detection(self, total_processed):
         """Complete the auto classification process"""
-        # Re-enable button and all UI controls
-        self.btn_auto_detect.config(state='normal', text="Auto no-code / code\nclassification")
+        # Re-enable all UI controls (no button to re-enable)
         self.enable_ui_controls()
         
         # Update progress display
@@ -1223,6 +1437,76 @@ class ImageLabelTool:
         self.update_parcel_stats()
         
         # Refresh the current image display to update radio button and status
+        if hasattr(self, 'image_paths') and self.image_paths and self.current_index < len(self.image_paths):
+            self.show_image()
+
+    def process_auto_detection_on_new_files(self, new_files):
+        """Process auto detection specifically for new files in a separate thread"""
+        processing_thread = threading.Thread(target=self.run_auto_detection_on_new_files, args=(new_files,))
+        processing_thread.daemon = True
+        processing_thread.start()
+
+    def run_auto_detection_on_new_files(self, new_files):
+        """Run auto detection on new files only"""
+        total_files = len(new_files)
+        processed = 0
+        no_code_count = 0
+        read_failure_count = 0
+        
+        self.logger.info(f"Processing {total_files} new unlabeled files...")
+        
+        for file_path in new_files:
+            # Update progress on UI thread
+            filename = os.path.basename(file_path)
+            self.root.after(0, self.update_auto_detect_progress, processed, total_files, filename)
+            
+            # Get auto detection result
+            detection_result = self.auto_detect_function(file_path)
+            
+            # Determine label based on result
+            if detection_result == 0:
+                label = "no code"  # No barcode detected
+                no_code_count += 1
+            else:  # detection_result > 0
+                label = "read failure"  # Barcode detected but not readable
+                read_failure_count += 1
+            
+            # Log the classification decision
+            self.logger.info(f"NEW FILE CLASSIFIED: {filename} → {label} (barcode count: {detection_result})")
+            
+            # Update labels dictionary
+            if not hasattr(self, 'labels'):
+                self.labels = {}
+            self.labels[file_path] = label
+            
+            # Save to CSV and update stats
+            self.root.after(0, self.save_csv)
+            self.root.after(0, self.update_counts)
+            self.root.after(0, self.update_total_stats)
+            self.root.after(0, self.update_parcel_stats)
+            
+            # Small delay to show progress
+            time.sleep(0.1)
+            processed += 1
+        
+        # Log session summary
+        self.logger.info("-" * 30)
+        self.logger.info("NEW FILES AUTO-CLASSIFICATION SUMMARY:")
+        self.logger.info(f"Total new files processed: {total_files}")
+        self.logger.info(f"Classified as 'no code': {no_code_count}")
+        self.logger.info(f"Classified as 'read failure': {read_failure_count}")
+        self.logger.info("NEW FILES AUTO-CLASSIFICATION COMPLETED")
+        self.logger.info("-" * 30)
+        
+        # Final update
+        self.root.after(0, self.complete_new_files_detection, total_files)
+
+    def complete_new_files_detection(self, total_processed):
+        """Complete the new files auto classification process"""
+        # Update progress display
+        self.auto_detect_progress_var.set(f"Completed processing {total_processed} new files!")
+        
+        # Refresh the current image display
         if hasattr(self, 'image_paths') and self.image_paths and self.current_index < len(self.image_paths):
             self.show_image()
 
@@ -1353,8 +1637,11 @@ class ImageLabelTool:
         interval_ms = int(interval_minutes * 60 * 1000)  # Convert minutes to milliseconds
         self.auto_timer_job = self.root.after(interval_ms, self.run_auto_detection_timer)
         
-        # Start countdown display
-        self.auto_timer_status_var.set("Auto-classification enabled")
+        # Start countdown display with status based on checkbox state
+        if self.auto_detect_enabled.get():
+            self.auto_timer_status_var.set("Monitoring for new files (auto-detection enabled)")
+        else:
+            self.auto_timer_status_var.set("Monitoring for new files (auto-detection disabled)")
         self.start_countdown(interval_minutes)
         
     def stop_auto_timer(self):
@@ -1374,7 +1661,7 @@ class ImageLabelTool:
         # Re-enable all controls when auto-timer is stopped
         self.enable_ui_controls()
         
-        self.auto_timer_status_var.set("Auto-classification disabled")
+        self.auto_timer_status_var.set("Monitoring stopped")
 
     def start_countdown(self, interval_minutes):
         """Start the countdown timer display"""
@@ -1464,7 +1751,7 @@ class ImageLabelTool:
             return []
 
     def run_auto_detection_timer(self):
-        """Run auto detection from timer (silent mode)"""
+        """Check for new unlabeled files every N minutes and optionally run auto-detection"""
         if not self.auto_timer_enabled.get():
             return
         
@@ -1473,39 +1760,35 @@ class ImageLabelTool:
         self.last_auto_run = datetime.now()
         current_time = self.last_auto_run.strftime('%H:%M:%S')
         
-        # First scan for new images in the folder
-        self.auto_timer_status_var.set(f"[{current_time}] Scanning folder for new images...")
-        new_images = self.scan_for_new_images()
+        # Scan for new unlabeled files
+        self.auto_timer_status_var.set(f"[{current_time}] Checking for new unlabeled files...")
+        new_unlabeled_files = self.get_new_unlabeled_files()
         
-        if new_images:
-            self.auto_timer_status_var.set(f"Found {len(new_images)} new images!\nProcessing unclassified images...")
-        else:
-            self.auto_timer_status_var.set("No new images found.\nChecking unclassified images...")
-        
-        # Run auto classification silently (no popup)
-        if hasattr(self, 'all_image_paths') and self.all_image_paths:
-            unclassified_images = self.get_unclassified_images()
+        if new_unlabeled_files:
+            self.auto_timer_status_var.set(f"Found {len(new_unlabeled_files)} new unlabeled files!")
             
-            if unclassified_images:
-                # Show different message based on whether we found new images
-                if new_images:
-                    new_unclassified = [img for img in new_images if img in unclassified_images]
-                    if new_unclassified:
-                        self.auto_timer_status_var.set(f"Processing {len(new_unclassified)} new unclassified images\n(Total unclassified: {len(unclassified_images)})")
-                    else:
-                        self.auto_timer_status_var.set(f"New images already classified\nProcessing {len(unclassified_images)} unclassified images")
-                else:
-                    self.auto_timer_status_var.set(f"Processing {len(unclassified_images)} unclassified images")
-                
-                # Run classification in background (controls already disabled)
-                self.process_auto_detection_silent(unclassified_images)
+            # Log the discovery of new files
+            self.logger.info(f"Timer check: Found {len(new_unlabeled_files)} new unlabeled files")
+            for file_path in new_unlabeled_files:
+                self.logger.info(f"New file: {os.path.basename(file_path)}")
+            
+            # Check if auto-detection is enabled
+            if self.auto_detect_enabled.get():
+                self.auto_timer_status_var.set(f"Auto-detecting barcodes in {len(new_unlabeled_files)} new files...")
+                # Run auto-detection on new files only
+                self.process_auto_detection_on_new_files(new_unlabeled_files)
             else:
-                if new_images:
-                    self.auto_timer_status_var.set(f"Found {len(new_images)} new images\nAll images are now classified!")
-                else:
-                    self.auto_timer_status_var.set("No new images found\nAll existing images classified")
+                self.auto_timer_status_var.set(f"Found {len(new_unlabeled_files)} new files\n(Auto-detection disabled)")
+                # Update the CSV to mark these as unclassified
+                for file_path in new_unlabeled_files:
+                    self.labels[file_path] = "(Unclassified)"
+                self.save_csv()
+                self.update_counts()
+        else:
+            self.auto_timer_status_var.set(f"[{current_time}] No new unlabeled files found")
+            self.logger.info("Timer check: No new unlabeled files found")
         
-        # Schedule next run directly without validation (we already validated when starting)
+        # Schedule next run
         if self.auto_timer_enabled.get():
             try:
                 interval_minutes = float(self.auto_timer_interval.get())
@@ -1523,6 +1806,7 @@ class ImageLabelTool:
         # Disable navigation buttons
         self.btn_prev.config(state='disabled')
         self.btn_next.config(state='disabled')
+        self.btn_jump_unclassified.config(state='disabled')
         
         # Disable radio buttons
         for rb in self.radio_buttons:
@@ -1530,11 +1814,13 @@ class ImageLabelTool:
         
         # Disable other buttons
         self.btn_select.config(state='disabled')
-        self.btn_auto_detect.config(state='disabled')
         self.btn_gen_no_read.config(state='disabled')
         self.btn_1to1.config(state='disabled')
         self.btn_zoom_in.config(state='disabled')
         self.btn_zoom_out.config(state='disabled')
+        
+        # Disable checkbox
+        self.auto_detect_checkbox.config(state='disabled')
         
         # Disable entry fields
         self.total_parcels_entry.config(state='disabled')
@@ -1545,6 +1831,7 @@ class ImageLabelTool:
         # Enable navigation buttons
         self.btn_prev.config(state='normal')
         self.btn_next.config(state='normal')
+        self.btn_jump_unclassified.config(state='normal')
         
         # Enable radio buttons
         for rb in self.radio_buttons:
@@ -1552,11 +1839,13 @@ class ImageLabelTool:
         
         # Enable other buttons
         self.btn_select.config(state='normal')
-        self.btn_auto_detect.config(state='normal')
         self.btn_gen_no_read.config(state='normal')
         self.btn_1to1.config(state='normal')
         self.btn_zoom_in.config(state='normal')
         self.btn_zoom_out.config(state='normal')
+        
+        # Enable checkbox
+        self.auto_detect_checkbox.config(state='normal')
         
         # Enable entry fields
         self.total_parcels_entry.config(state='normal')

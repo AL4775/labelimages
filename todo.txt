@@ -1,0 +1,3 @@
+✅ COMPLETED - In the image count, it seems that the number of "(unclassified) is not calculated / updated. It should be equal to the number of remaining images to classiy.
+✅ COMPLETED - The number of parcels should be counting only the count for images that have been classified - and updated as we classify more images
+✅ COMPLETED - Parcel with no code, means number of parcels for which all classified images are all "no code" classified.
