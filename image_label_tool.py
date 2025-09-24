@@ -19,8 +19,8 @@ class ImageLabelTool:
         self.root = root
         self.root.title("Image Label Tool")
         self.root.configure(bg="#FAFAFA")  # Very light gray background
-        self.root.minsize(1200, 700)  # Reduced minimum window size for more compact layout
-        self.root.geometry("1400x750")  # Reduced initial window size - more compact and manageable
+        self.root.minsize(800, 500)  # Ultra-compact minimum window size
+        self.root.geometry("1000x600")  # Ultra-compact window size
         self.image_paths = []
         self.current_index = 0
         self.labels = {}
@@ -87,7 +87,7 @@ class ImageLabelTool:
 
     def setup_ui(self):
         # Main container with padding
-        main_frame = tk.Frame(self.root, bg="#FAFAFA", padx=10, pady=10)
+        main_frame = tk.Frame(self.root, bg="#FAFAFA", padx=8, pady=8)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Top section: Folder selection and total parcels
@@ -127,67 +127,54 @@ class ImageLabelTool:
         self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
         self.filter_menu.pack(side=tk.LEFT, padx=(5, 0))
 
-        # Main content area - horizontal layout
+        # Top toolbar for view controls and export
+        toolbar_frame = tk.Frame(main_frame, bg="#E8E8E8", relief="solid", bd=1)
+        toolbar_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # Scale info (compact display)
+        self.scale_info_var = tk.StringVar()
+        self.scale_info_label = tk.Label(toolbar_frame, textvariable=self.scale_info_var, 
+                                       bg="#E8E8E8", font=("Arial", 8), fg="#757575")
+        self.scale_info_label.pack(side=tk.LEFT, padx=(10, 15))
+        
+        # 1:1 Scale button
+        self.btn_1to1 = tk.Button(toolbar_frame, text="1:1 Scale", command=self.toggle_1to1_scale,
+                                bg="#FFCC80", fg="white", font=("Arial", 8, "bold"),
+                                padx=8, pady=3, relief="flat")
+        self.btn_1to1.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Zoom controls
+        tk.Label(toolbar_frame, text="Zoom:", bg="#E8E8E8", font=("Arial", 8)).pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.btn_zoom_out = tk.Button(toolbar_frame, text="−", command=self.zoom_out,
+                                    bg="#CE93D8", fg="white", font=("Arial", 10, "bold"),
+                                    padx=6, pady=2, relief="flat", width=2)
+        self.btn_zoom_out.pack(side=tk.LEFT, padx=(0, 3))
+        
+        self.btn_zoom_in = tk.Button(toolbar_frame, text="+", command=self.zoom_in,
+                                   bg="#CE93D8", fg="white", font=("Arial", 10, "bold"),
+                                   padx=6, pady=2, relief="flat", width=2)
+        self.btn_zoom_in.pack(side=tk.LEFT, padx=(0, 15))
+
+        # Export button for current filter
+        self.btn_gen_filter_folder = tk.Button(toolbar_frame, text="Gen Filter Folder", 
+                                             command=self.generate_filter_folder,
+                                             bg="#9C27B0", fg="white", font=("Arial", 8, "bold"),
+                                             padx=8, pady=3, relief="flat")
+        self.btn_gen_filter_folder.pack(side=tk.LEFT)
+
+        # Main content area - horizontal layout (now without left panel)
         content_frame = tk.Frame(main_frame, bg="#FAFAFA")
         content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
-        # Left panel for controls - reduced width
-        left_panel = tk.Frame(content_frame, bg="#FAFAFA", width=180)
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
-        left_panel.pack_propagate(False)  # Maintain fixed width
-        
-        # Center panel for image
+        # Center panel for image (now takes more space without left panel)
         center_panel = tk.Frame(content_frame, bg="#FAFAFA")
-        center_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
+        center_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 6))
         
-        # Right panel for statistics - reduced width
-        right_panel = tk.Frame(content_frame, bg="#FAFAFA", width=300)
+        # Right panel for statistics - ultra-compact
+        right_panel = tk.Frame(content_frame, bg="#FAFAFA", width=200)  # Reduced from 250
         right_panel.pack(side=tk.RIGHT, fill=tk.Y)
         right_panel.pack_propagate(False)  # Maintain fixed width
-
-        # === LEFT PANEL: Scale and Zoom Controls ===
-        tk.Label(left_panel, text="View Controls", bg="#FAFAFA", font=("Arial", 10, "bold"), fg="#424242").pack(pady=(0, 8))
-        
-        # Scale info
-        self.scale_info_var = tk.StringVar()
-        self.scale_info_label = tk.Label(left_panel, textvariable=self.scale_info_var, 
-                                       bg="#FAFAFA", font=("Arial", 8), fg="#757575",
-                                       wraplength=150, justify=tk.LEFT)
-        self.scale_info_label.pack(pady=(0, 5))
-        
-        # 1:1 Scale button
-        self.btn_1to1 = tk.Button(left_panel, text="1:1 Scale", command=self.toggle_1to1_scale,
-                                bg="#FFCC80", fg="white", font=("Arial", 10, "bold"),
-                                padx=10, pady=5, relief="flat", width=12)
-        self.btn_1to1.pack(pady=(0, 10))
-        
-        # Zoom controls
-        zoom_frame = tk.Frame(left_panel, bg="#FAFAFA")
-        zoom_frame.pack(pady=(0, 20))
-        tk.Label(zoom_frame, text="Zoom:", bg="#FAFAFA", font=("Arial", 10)).pack()
-        zoom_buttons = tk.Frame(zoom_frame, bg="#FAFAFA")
-        zoom_buttons.pack(pady=(5, 0))
-        
-        self.btn_zoom_out = tk.Button(zoom_buttons, text="−", command=self.zoom_out,
-                                    bg="#CE93D8", fg="white", font=("Arial", 12, "bold"),
-                                    padx=8, pady=2, relief="flat", width=3)
-        self.btn_zoom_out.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.btn_zoom_in = tk.Button(zoom_buttons, text="+", command=self.zoom_in,
-                                   bg="#CE93D8", fg="white", font=("Arial", 12, "bold"),
-                                   padx=8, pady=2, relief="flat", width=3)
-        self.btn_zoom_in.pack(side=tk.LEFT)
-
-        # Export operations section
-        export_frame = tk.Frame(left_panel, bg="#FAFAFA")
-        export_frame.pack(pady=(0, 20))
-        tk.Label(export_frame, text="Export:", bg="#FAFAFA", font=("Arial", 10, "bold")).pack()
-        
-        self.btn_gen_no_read = tk.Button(export_frame, text="Gen Read Failure\nFolder", 
-                                       command=self.generate_read_failure_folder,
-                                       bg="#9C27B0", fg="white", font=("Arial", 9, "bold"),
-                                       padx=8, pady=5, relief="flat", width=12)
-        self.btn_gen_no_read.pack(pady=(5, 0))
 
         # === CENTER PANEL: Image Display ===
         # Status indicator centered above image
@@ -225,41 +212,41 @@ class ImageLabelTool:
         self.canvas.bind("<B1-Motion>", self.do_pan)
         self.canvas.bind("<MouseWheel>", self.mouse_wheel_zoom)
         
-        # Add file status above label buttons
+        # Add file status above label buttons - reduced spacing
         self.status_var = tk.StringVar()
         self.status = tk.Label(center_panel, textvariable=self.status_var, bg="#FAFAFA", 
-                             font=("Arial", 10), fg="#424242")
-        self.status.pack(pady=(10, 5))
+                             font=("Arial", 9), fg="#424242")  # Smaller font
+        self.status.pack(pady=(5, 2))  # Reduced from (10, 5) to (5, 2)
         
-        # Add parcel index display
+        # Add parcel index display - reduced spacing
         self.parcel_index_var = tk.StringVar()
         self.parcel_index_label = tk.Label(center_panel, textvariable=self.parcel_index_var, bg="#FAFAFA",
-                                         font=("Arial", 10), fg="#424242")
-        self.parcel_index_label.pack(pady=(0, 5))
+                                         font=("Arial", 9), fg="#424242")  # Smaller font
+        self.parcel_index_label.pack(pady=(0, 2))  # Reduced from (0, 5) to (0, 2)
 
-        # Navigation and radio buttons for labels (below image)
+        # Navigation and radio buttons for labels (below image) - compact spacing
         self.label_var = tk.StringVar(value=LABELS[0])
         
         # Main container for navigation and labels
         nav_label_container = tk.Frame(center_panel, bg="#FAFAFA")
-        nav_label_container.pack(pady=(0, 10))
+        nav_label_container.pack(pady=(0, 5))  # Reduced from 10 to 5
         
         # Previous button (left side)
         self.btn_prev = tk.Button(nav_label_container, text="<< Prev", command=self.prev_image,
-                                bg="#90CAF9", fg="white", font=("Arial", 9, "bold"),
-                                padx=10, pady=5, relief="flat")
+                                bg="#90CAF9", fg="white", font=("Arial", 8, "bold"),
+                                padx=8, pady=4, relief="flat")
         self.btn_prev.pack(side=tk.LEFT, padx=(0, 15))
         
         # Label frame (center)
-        label_frame = tk.Frame(nav_label_container, bg="#FAFAFA", relief="solid", bd=1, padx=15, pady=10)
+        label_frame = tk.Frame(nav_label_container, bg="#FAFAFA", relief="solid", bd=1, padx=10, pady=6)  # Reduced padding
         label_frame.pack(side=tk.LEFT)
         
-        tk.Label(label_frame, text="Label:", bg="#FAFAFA", font=("Arial", 10, "bold")).pack(pady=(0, 5))
+        tk.Label(label_frame, text="Label:", bg="#FAFAFA", font=("Arial", 9, "bold")).pack(pady=(0, 3))  # Smaller font and padding
         
-        # Add keyboard shortcut help
-        help_text = tk.Label(label_frame, text="Keyboard shortcuts: Q, W, E, R, T, Y | O, P Navigate", 
-                           bg="#FAFAFA", font=("Arial", 8), fg="#757575")
-        help_text.pack(pady=(0, 5))
+        # Add keyboard shortcut help - more compact
+        help_text = tk.Label(label_frame, text="Shortcuts: Q,W,E,R,T,Y | O,P Navigate", 
+                           bg="#FAFAFA", font=("Arial", 7), fg="#757575")  # Smaller font and shorter text
+        help_text.pack(pady=(0, 3))  # Reduced padding
         
         radio_container = tk.Frame(label_frame, bg="#FAFAFA")
         radio_container.pack()
@@ -286,74 +273,91 @@ class ImageLabelTool:
         }
         
         self.radio_buttons = []  # Store radio buttons for enabling/disabling
+        
+        # Single row layout with multi-line text for compact width
         for i, label in enumerate(LABELS):
             display_text = label + label_shortcuts[label]
+            # Format multi-word labels with line breaks
+            if " " in label and label != "(Unclassified)":
+                words = display_text.split(" ")
+                if len(words) >= 2:
+                    # Split into 2 lines for better compactness
+                    mid_point = len(words) // 2
+                    line1 = " ".join(words[:mid_point])
+                    line2 = " ".join(words[mid_point:])
+                    display_text = f"{line1}\n{line2}"
+            
             rb = tk.Radiobutton(radio_container, text=display_text, variable=self.label_var, 
                               value=label, command=self.set_label_radio,
-                              bg=label_colors[label], font=("Arial", 9, "bold"),
-                              selectcolor="white", padx=6, pady=3)
-            rb.grid(row=0, column=i, padx=3)
+                              bg=label_colors[label], font=("Arial", 7, "bold"),
+                              selectcolor="white", padx=2, pady=1, 
+                              justify=tk.CENTER)  # Center-align multi-line text
+            rb.grid(row=0, column=i, padx=1, pady=1, sticky="ew")  # Single row layout
             self.radio_buttons.append(rb)
         
-        # Next button (right side)
-        self.btn_next = tk.Button(nav_label_container, text="Next >>", command=self.next_image,
-                                bg="#90CAF9", fg="white", font=("Arial", 9, "bold"),
-                                padx=10, pady=5, relief="flat")
-        self.btn_next.pack(side=tk.RIGHT, padx=(10, 0))
+        # Navigation buttons (right side) - stacked vertically for width efficiency
+        nav_buttons_frame = tk.Frame(nav_label_container, bg="#FAFAFA")
+        nav_buttons_frame.pack(side=tk.RIGHT, padx=(8, 0))
         
-        # Jump to Next Unclassified button (right side)
-        self.btn_jump_unclassified = tk.Button(nav_label_container, text="Jump to Next Unclassified", 
+        # Next button (top)
+        self.btn_next = tk.Button(nav_buttons_frame, text="Next >>", command=self.next_image,
+                                bg="#90CAF9", fg="white", font=("Arial", 8, "bold"),
+                                padx=8, pady=3, relief="flat")
+        self.btn_next.pack(pady=(0, 2))  # Small gap between buttons
+        
+        # Jump to Next Unclassified button (bottom)
+        self.btn_jump_unclassified = tk.Button(nav_buttons_frame, text="Jump to Next Unclassified", 
                                               command=self.jump_to_next_unclassified,
-                                              bg="#FF9800", fg="white", font=("Arial", 9, "bold"),
-                                              padx=10, pady=5, relief="flat")
-        self.btn_jump_unclassified.pack(side=tk.RIGHT, padx=(10, 0))
+                                              bg="#FF9800", fg="white", font=("Arial", 7, "bold"),  # Smaller font
+                                              padx=6, pady=2, relief="flat")  # Smaller padding
+        self.btn_jump_unclassified.pack()
 
         # === RIGHT PANEL: Statistics ===
-        tk.Label(right_panel, text="Statistics", bg="#FAFAFA", font=("Arial", 10, "bold"), fg="#424242").pack(pady=(0, 8))
+        tk.Label(right_panel, text="Statistics", bg="#FAFAFA", font=("Arial", 9, "bold"), fg="#424242").pack(pady=(0, 6))
         
         # Progress section
-        progress_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=8, pady=8)
-        progress_section.pack(fill=tk.X, pady=(0, 8))
+        progress_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
+        progress_section.pack(fill=tk.X, pady=(0, 6))
         
-        tk.Label(progress_section, text="Progress", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#5E88D8").pack()
+        tk.Label(progress_section, text="Progress", bg="#F5F5F5", font=("Arial", 9, "bold"), fg="#5E88D8").pack()
         self.progress_var = tk.StringVar()
         self.progress_label = tk.Label(progress_section, textvariable=self.progress_var, bg="#F5F5F5",
-                                     font=("Arial", 9), fg="#424242", wraplength=220)
-        self.progress_label.pack(pady=(5, 0))
+                                     font=("Arial", 8), fg="#424242", wraplength=200)
+        self.progress_label.pack(pady=(3, 0))
         
         # Image counts section
-        counts_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=8, pady=8)
-        counts_section.pack(fill=tk.X, pady=(0, 8))
+        counts_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
+        counts_section.pack(fill=tk.X, pady=(0, 6))
         
-        tk.Label(counts_section, text="Image Counts", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#81C784").pack()
+        tk.Label(counts_section, text="Image Counts", bg="#F5F5F5", font=("Arial", 9, "bold"), fg="#81C784").pack()
         self.count_var = tk.StringVar()
         self.count_label = tk.Label(counts_section, textvariable=self.count_var, bg="#F5F5F5",
-                                  font=("Arial", 9), fg="#424242", wraplength=220)
-        self.count_label.pack(pady=(5, 0))
+                                  font=("Arial", 8), fg="#424242", wraplength=200)
+        self.count_label.pack(pady=(3, 0))
         
         # Parcel statistics section
-        parcel_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=10, pady=10)
-        parcel_section.pack(fill=tk.X, pady=(0, 10))
+        parcel_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
+        parcel_section.pack(fill=tk.X, pady=(0, 6))
         
-        tk.Label(parcel_section, text="Parcel count", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#81C784").pack()
+        tk.Label(parcel_section, text="Parcel count", bg="#F5F5F5", font=("Arial", 9, "bold"), fg="#81C784").pack()
         self.parcel_count_var = tk.StringVar()
         self.parcel_count_label = tk.Label(parcel_section, textvariable=self.parcel_count_var, 
-                                         font=("Arial", 9), bg="#F5F5F5", fg="#424242", wraplength=220)
-        self.parcel_count_label.pack(pady=(5, 0))
+                                         font=("Arial", 8), bg="#F5F5F5", fg="#424242", wraplength=200)
+        self.parcel_count_label.pack(pady=(3, 0))
         
         # Total statistics section
-        total_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=10, pady=10)
-        total_section.pack(fill=tk.X, pady=(0, 10))
+        total_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
+        total_section.pack(fill=tk.X, pady=(0, 6))
         
-        tk.Label(total_section, text="Net Stats", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#5E88D8").pack()
+        tk.Label(total_section, text="Net Stats", bg="#F5F5F5", font=("Arial", 9, "bold"), fg="#5E88D8").pack()
         self.parcel_stats_var = tk.StringVar()
         self.parcel_stats_label = tk.Label(total_section, textvariable=self.parcel_stats_var, 
-                                         font=("Arial", 9), fg="#424242", bg="#F5F5F5", wraplength=220)
-        self.parcel_stats_label.pack(pady=(5, 0))
+                                         font=("Arial", 8), fg="#424242", bg="#F5F5F5", wraplength=200)
+        self.parcel_stats_label.pack(pady=(3, 0))
 
         # Auto monitoring section (with checkbox hidden)
-        auto_detect_section = tk.Frame(right_panel, bg="#FFF3E0", relief="solid", bd=1, padx=10, pady=10)
-        auto_detect_section.pack(fill=tk.X, pady=(0, 8))  # RESTORED: Show the monitoring section
+        auto_detect_section = tk.Frame(right_panel, bg="#FFF3E0", relief="solid", bd=1, padx=6, pady=6)
+        auto_detect_section.pack(fill=tk.X, pady=(0, 6))  # RESTORED: Show the monitoring section
         
         tk.Label(auto_detect_section, text="Auto Monitor New Files", bg="#FFF3E0", font=("Arial", 10, "bold"), fg="#F57C00").pack()
         
@@ -434,6 +438,9 @@ class ImageLabelTool:
         
         # Set focus to root window to capture keyboard events
         self.root.focus_set()
+        
+        # Initialize button state based on default filter
+        self.update_filter_button_state()
 
     def validate_numeric_input(self, new_value):
         """Validate that input contains only numbers and decimal points"""
@@ -489,11 +496,11 @@ class ImageLabelTool:
         # Clear previous image
         self.canvas.delete("all")
         
-        # Get canvas dimensions
-        canvas_width = max(400, self.canvas.winfo_width())
-        canvas_height = max(300, self.canvas.winfo_height())
+        # Get canvas dimensions (reduced for ultra-compact layout)
+        canvas_width = max(350, self.canvas.winfo_width())  # Reduced from 400
+        canvas_height = max(250, self.canvas.winfo_height())  # Reduced from 300
         if canvas_width <= 1 or canvas_height <= 1:
-            canvas_width, canvas_height = 400, 400
+            canvas_width, canvas_height = 350, 350  # Smaller default size
         
         if self.scale_1to1:
             # Show image at 1:1 scale with current zoom level
@@ -784,10 +791,26 @@ class ImageLabelTool:
     def on_total_changed(self, event=None):
         """Called when the total parcels field changes"""
         self.update_total_stats()
+        # Trigger CSV and stats refresh when total parcels changes
+        self.save_csv()
 
     def on_filter_changed(self, value=None):
         """Called when the filter dropdown changes"""
         self.apply_filter()
+        self.update_filter_button_state()
+
+    def update_filter_button_state(self):
+        """Enable/disable the filter folder generation button based on current filter"""
+        if not hasattr(self, 'btn_gen_filter_folder'):
+            return
+            
+        filter_value = self.filter_var.get()
+        
+        # Disable button for "All images" and "(Unclassified) only"
+        if filter_value in ["All images", "(Unclassified) only"]:
+            self.btn_gen_filter_folder.config(state='disabled', bg="#CCCCCC")
+        else:
+            self.btn_gen_filter_folder.config(state='normal', bg="#9C27B0")
 
     def apply_filter(self):
         """Apply the current filter to show appropriate images"""
@@ -904,6 +927,156 @@ class ImageLabelTool:
                 parcel_label = parcel_labels_dict.get(parcel_id, "no code") if parcel_id else "no code"
                 parcel_index = self.get_parcel_index(path)
                 writer.writerow([path, label, parcel_id or "", parcel_label, parcel_index or ""])
+        
+        # Also generate statistics CSV file
+        self.save_stats_csv()
+
+    def save_stats_csv(self):
+        """Generate a statistics CSV file with all counting and parcel information"""
+        if not self.csv_filename:
+            return
+            
+        # Extract timestamp from the main CSV filename
+        # Expected format: revision_YYYYMMDD_HHMMSS.csv
+        base_name = os.path.basename(self.csv_filename)
+        if base_name.startswith('revision_'):
+            timestamp = base_name[9:-4]  # Extract timestamp part
+            stats_filename = os.path.join(os.path.dirname(self.csv_filename), f"stats_{timestamp}.csv")
+        else:
+            # Fallback if filename format is different
+            from datetime import datetime
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            stats_filename = os.path.join(os.path.dirname(self.csv_filename), f"stats_{timestamp}.csv")
+        
+        # Calculate all statistics
+        stats_data = self.calculate_comprehensive_stats()
+        
+        with open(stats_filename, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            
+            # Write statistics header
+            writer.writerow(['category', 'metric', 'value', 'description'])
+            
+            # Write all statistics
+            for category, metrics in stats_data.items():
+                for metric, data in metrics.items():
+                    writer.writerow([category, metric, data['value'], data['description']])
+
+    def calculate_comprehensive_stats(self):
+        """Calculate comprehensive statistics for the stats CSV"""
+        stats = {
+            'Image_Counts': {},
+            'Parcel_Counts': {},
+            'Progress_Stats': {},
+            'System_Info': {}
+        }
+        
+        # Image counting statistics
+        image_counts = {label: 0 for label in LABELS}
+        total_images = 0
+        
+        if hasattr(self, 'all_image_paths') and self.all_image_paths:
+            total_images = len(self.all_image_paths)
+            for path in self.all_image_paths:
+                if path in self.labels and self.labels[path] != "(Unclassified)":
+                    label = self.labels[path]
+                    if label in image_counts:
+                        image_counts[label] += 1
+                else:
+                    image_counts["(Unclassified)"] += 1
+        
+        # Store image count statistics
+        for label, count in image_counts.items():
+            stats['Image_Counts'][label] = {
+                'value': count,
+                'description': f'Number of images classified as {label}'
+            }
+        
+        stats['Image_Counts']['total_images'] = {
+            'value': total_images,
+            'description': 'Total number of images in dataset'
+        }
+        
+        # Calculate parcel statistics
+        parcel_labels_dict = self.calculate_parcel_labels()
+        parcel_counts = {}
+        unique_parcels = set()
+        
+        for path in self.all_image_paths if hasattr(self, 'all_image_paths') else []:
+            parcel_id = self.get_parcel_number(path)
+            if parcel_id:
+                unique_parcels.add(parcel_id)
+                parcel_label = parcel_labels_dict.get(parcel_id, "no code")
+                parcel_counts[parcel_label] = parcel_counts.get(parcel_label, 0) + 1
+        
+        # Store parcel statistics
+        for label, count in parcel_counts.items():
+            stats['Parcel_Counts'][f'parcels_{label}'] = {
+                'value': count,
+                'description': f'Number of parcels classified as {label}'
+            }
+        
+        stats['Parcel_Counts']['total_unique_parcels'] = {
+            'value': len(unique_parcels),
+            'description': 'Total number of unique parcels'
+        }
+        
+        # Add total number of parcels (including duplicates/all parcel entries)
+        total_parcel_entries = 0
+        for path in self.all_image_paths if hasattr(self, 'all_image_paths') else []:
+            if self.get_parcel_number(path):
+                total_parcel_entries += 1
+        
+        stats['Parcel_Counts']['total_parcel_entries'] = {
+            'value': total_parcel_entries,
+            'description': 'Total number of parcel entries (including duplicates)'
+        }
+        
+        # Add manually entered total number of parcels
+        try:
+            manual_total_parcels = int(self.total_parcels_var.get()) if hasattr(self, 'total_parcels_var') and self.total_parcels_var.get() else 0
+        except ValueError:
+            manual_total_parcels = 0
+            
+        stats['Parcel_Counts']['manual_total_parcels'] = {
+            'value': manual_total_parcels,
+            'description': 'Manually entered total number of parcels'
+        }
+        
+        # Calculate progress statistics
+        classified_images = sum(count for label, count in image_counts.items() if label != "(Unclassified)")
+        unclassified_images = image_counts.get("(Unclassified)", 0)
+        progress_percentage = (classified_images / total_images * 100) if total_images > 0 else 0
+        
+        stats['Progress_Stats']['classified_images'] = {
+            'value': classified_images,
+            'description': 'Number of images that have been classified'
+        }
+        
+        stats['Progress_Stats']['unclassified_images'] = {
+            'value': unclassified_images,
+            'description': 'Number of images still unclassified'
+        }
+        
+        stats['Progress_Stats']['progress_percentage'] = {
+            'value': f'{progress_percentage:.1f}%',
+            'description': 'Percentage of images classified'
+        }
+        
+        # System information
+        from datetime import datetime
+        stats['System_Info']['timestamp'] = {
+            'value': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'description': 'Time when statistics were generated'
+        }
+        
+        if hasattr(self, 'folder_path') and self.folder_path:
+            stats['System_Info']['source_folder'] = {
+                'value': self.folder_path,
+                'description': 'Source folder path for images'
+            }
+        
+        return stats
 
     def update_counts(self):
         counts = {label: 0 for label in LABELS}
@@ -937,7 +1110,7 @@ class ImageLabelTool:
         unclassified_images = total_images - classified_images
         
         # Multi-line format for better readability
-        progress_text = f"Progress:\n{classified_images}/{total_images} classified\n({unclassified_images} remaining)"
+        progress_text = f"\n{classified_images}/{total_images} classified\n({unclassified_images} remaining)"
         self.progress_var.set(progress_text)
         
         # Change text color and weight based on remaining count
@@ -1541,6 +1714,9 @@ class ImageLabelTool:
         # Update progress display
         self.auto_detect_progress_var.set(f"Completed!\nProcessed {total_processed} images")
         
+        # Save CSV and stats after bulk classification changes
+        self.save_csv()
+        
         # Update all statistics panels
         self.update_progress_display()
         self.update_counts()
@@ -1630,34 +1806,57 @@ class ImageLabelTool:
             # Stopping the timer
             self.stop_auto_timer()
 
-    def generate_read_failure_folder(self):
-        """Generate a timestamped folder and copy all 'read failure' images into it"""
+    def generate_filter_folder(self):
+        """Generate a timestamped folder and copy all images matching current filter into it"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             messagebox.showwarning("No Images", "Please select a folder with images first.")
             return
         
-        # Find all 'read failure' images
-        read_failure_images = [path for path in self.all_image_paths 
-                         if path in self.labels and self.labels[path] == "read failure"]
+        filter_value = self.filter_var.get()
         
-        if not read_failure_images:
-            messagebox.showinfo("No Images", "No 'read failure' images found to copy.")
+        # Skip for disabled filters
+        if filter_value in ["All images", "(Unclassified) only"]:
+            messagebox.showinfo("Invalid Filter", "This function is not available for 'All images' or 'Unclassified' filters.")
+            return
+        
+        # Map filter names to label values and folder names
+        filter_map = {
+            "no code only": ("no code", "no_code"),
+            "read failure only": ("read failure", "read_failure"),
+            "occluded only": ("occluded", "occluded"),
+            "image quality only": ("image quality", "image_quality"),
+            "damaged only": ("damaged", "damaged"),
+            "other only": ("other", "other")
+        }
+        
+        if filter_value not in filter_map:
+            messagebox.showerror("Invalid Filter", f"Unknown filter: {filter_value}")
+            return
+        
+        label_value, folder_prefix = filter_map[filter_value]
+        
+        # Find all images matching the current filter
+        matching_images = [path for path in self.all_image_paths 
+                          if path in self.labels and self.labels[path] == label_value]
+        
+        if not matching_images:
+            messagebox.showinfo("No Images", f"No '{label_value}' images found to copy.")
             return
         
         # Disable button during processing
-        self.btn_gen_no_read.config(state='disabled', text="Generating...")
+        self.btn_gen_filter_folder.config(state='disabled', text="Generating...")
         
         # Use the progress display for feedback
-        self.auto_detect_progress_var.set(f"Preparing to copy {len(read_failure_images)} 'read failure' images...")
+        self.auto_detect_progress_var.set(f"Preparing to copy {len(matching_images)} '{label_value}' images...")
         
         # Start processing in a separate thread to avoid freezing the UI
         import threading
-        processing_thread = threading.Thread(target=self.process_read_failure_copy, args=(read_failure_images,))
+        processing_thread = threading.Thread(target=self.process_filter_copy, args=(matching_images, label_value, folder_prefix))
         processing_thread.daemon = True
         processing_thread.start()
 
-    def process_read_failure_copy(self, read_failure_images):
-        """Process copying read failure images in a separate thread"""
+    def process_filter_copy(self, matching_images, label_value, folder_prefix):
+        """Process copying filter images in a separate thread"""
         import shutil
         from datetime import datetime
         
@@ -1668,16 +1867,16 @@ class ImageLabelTool:
                 
             # Create timestamped folder name
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            folder_name = f"read_failure_{timestamp}"
+            folder_name = f"{folder_prefix}_{timestamp}"
             destination_folder = os.path.join(self.folder_path, folder_name)
             
             # Create the directory
             os.makedirs(destination_folder, exist_ok=True)
             
-            total_images = len(read_failure_images)
+            total_images = len(matching_images)
             copied = 0
             
-            for image_path in read_failure_images:
+            for image_path in matching_images:
                 # Update progress on UI thread
                 filename = os.path.basename(image_path)
                 self.root.after(0, self.update_copy_progress, copied + 1, total_images, filename)
@@ -1693,7 +1892,7 @@ class ImageLabelTool:
                 time.sleep(0.05)
             
             # Completion
-            self.root.after(0, self.complete_read_failure_copy, total_images, folder_name)
+            self.root.after(0, self.complete_filter_copy, total_images, folder_name, label_value)
             
         except Exception as e:
             # Error handling
@@ -1704,22 +1903,24 @@ class ImageLabelTool:
         progress_text = f"Copying {current}/{total}\n{filename}"
         self.auto_detect_progress_var.set(progress_text)
 
-    def complete_read_failure_copy(self, total_copied, folder_name):
+    def complete_filter_copy(self, total_copied, folder_name, label_value):
         """Complete the copy operation"""
-        # Re-enable button
-        self.btn_gen_no_read.config(state='normal', text="Gen Read Failure\nFolder")
+        # Re-enable button with current filter state
+        self.update_filter_button_state()
+        self.btn_gen_filter_folder.config(text="Gen Filter Folder")
         
         # Show completion message
         self.auto_detect_progress_var.set(f"Completed!\nCopied {total_copied} images to:\n{folder_name}")
         
         # Show success dialog
         messagebox.showinfo("Copy Complete", 
-                          f"Successfully copied {total_copied} 'read failure' images to folder:\n{folder_name}")
+                          f"Successfully copied {total_copied} '{label_value}' images to folder:\n{folder_name}")
 
     def copy_error(self, error_message):
         """Handle copy operation errors"""
-        # Re-enable button
-        self.btn_gen_no_read.config(state='normal', text="Gen Read Failure\nFolder")
+        # Re-enable button with current filter state
+        self.update_filter_button_state()
+        self.btn_gen_filter_folder.config(text="Gen Filter Folder")
         
         # Show error message
         self.auto_detect_progress_var.set("Copy failed!")
@@ -1737,6 +1938,39 @@ class ImageLabelTool:
         
         self.stop_auto_timer()  # Stop any existing timer
         
+        # Check for new images immediately when Start is clicked
+        from datetime import datetime
+        current_time = datetime.now().strftime('%H:%M:%S')
+        self.auto_timer_status_var.set(f"[{current_time}] Checking for new unlabeled files...")
+        
+        new_unlabeled_files = self.get_new_unlabeled_files()
+        
+        if new_unlabeled_files:
+            self.auto_timer_status_var.set(f"Found {len(new_unlabeled_files)} new unlabeled files!")
+            
+            # Log the discovery of new files
+            self.logger.info(f"Start button: Found {len(new_unlabeled_files)} new unlabeled files")
+            for file_path in new_unlabeled_files:
+                self.logger.info(f"New file: {os.path.basename(file_path)}")
+            
+            # Check if auto-detection is enabled
+            if self.auto_detect_enabled.get():
+                self.auto_timer_status_var.set(f"Auto-detecting barcodes in {len(new_unlabeled_files)} new files...")
+                # Run auto-detection on new files only
+                self.process_auto_detection_on_new_files(new_unlabeled_files)
+            else:
+                self.auto_timer_status_var.set(f"Found {len(new_unlabeled_files)} new files - monitoring started")
+                # Update the CSV to mark these as unclassified
+                for file_path in new_unlabeled_files:
+                    self.labels[file_path] = "(Unclassified)"
+                self.save_csv()
+                self.update_counts()
+                # Refresh the UI to show the new images
+                self.apply_filter()
+        else:
+            self.auto_timer_status_var.set(f"[{current_time}] No new unlabeled files found - monitoring started")
+            self.logger.info("Start button: No new unlabeled files found")
+        
         # Update UI state
         self.auto_timer_enabled.set(True)
         self.auto_timer_button.config(text="Stop", bg="#f44336", activebackground="#d32f2f")
@@ -1748,11 +1982,7 @@ class ImageLabelTool:
         interval_ms = int(interval_minutes * 60 * 1000)  # Convert minutes to milliseconds
         self.auto_timer_job = self.root.after(interval_ms, self.run_auto_detection_timer)
         
-        # Start countdown display with status based on checkbox state
-        if self.auto_detect_enabled.get():
-            self.auto_timer_status_var.set("Monitoring for new files (auto-detection enabled)")
-        else:
-            self.auto_timer_status_var.set("Monitoring for new files")
+        # Start countdown display
         self.start_countdown(interval_minutes)
         
     def stop_auto_timer(self):
@@ -1764,15 +1994,43 @@ class ImageLabelTool:
         # Stop countdown
         self.stop_countdown()
         
+        # Check for new images immediately when Stop is clicked
+        if hasattr(self, 'auto_timer_enabled') and self.auto_timer_enabled.get():
+            from datetime import datetime
+            current_time = datetime.now().strftime('%H:%M:%S')
+            self.auto_timer_status_var.set(f"[{current_time}] Final check for new unlabeled files...")
+            
+            new_unlabeled_files = self.get_new_unlabeled_files()
+            
+            if new_unlabeled_files:
+                self.auto_timer_status_var.set(f"Final check: Found {len(new_unlabeled_files)} new files - monitoring stopped")
+                
+                # Log the discovery of new files
+                self.logger.info(f"Stop button: Found {len(new_unlabeled_files)} new unlabeled files")
+                for file_path in new_unlabeled_files:
+                    self.logger.info(f"New file: {os.path.basename(file_path)}")
+                
+                # Update the CSV to mark these as unclassified
+                for file_path in new_unlabeled_files:
+                    self.labels[file_path] = "(Unclassified)"
+                self.save_csv()
+                self.update_counts()
+                # Refresh the UI to show the new images
+                self.apply_filter()
+            else:
+                self.auto_timer_status_var.set(f"[{current_time}] Final check: No new files found - monitoring stopped")
+                self.logger.info("Stop button: No new unlabeled files found")
+        
         # Update UI state
-        self.auto_timer_enabled.set(False)
-        self.auto_timer_button.config(text="Start", bg="#4CAF50", activebackground="#45a049")
-        self.auto_timer_entry.config(state='normal')
+        if hasattr(self, 'auto_timer_enabled'):
+            self.auto_timer_enabled.set(False)
+        if hasattr(self, 'auto_timer_button'):
+            self.auto_timer_button.config(text="Start", bg="#4CAF50", activebackground="#45a049")
+        if hasattr(self, 'auto_timer_entry'):
+            self.auto_timer_entry.config(state='normal')
         
         # Re-enable folder selection when monitoring is stopped
         self.enable_ui_controls_for_monitoring()
-        
-        self.auto_timer_status_var.set("Monitoring stopped")
 
     def start_countdown(self, interval_minutes):
         """Start the countdown timer display"""
