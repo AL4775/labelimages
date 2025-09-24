@@ -46,7 +46,10 @@ echo.
     --hidden-import=PIL.ImageTk ^
     --hidden-import=cv2 ^
     --hidden-import=numpy ^
-    --exclude-module=matplotlib ^
+    --hidden-import=matplotlib ^
+    --hidden-import=matplotlib.pyplot ^
+    --hidden-import=matplotlib.backends.backend_tkagg ^
+    --hidden-import=seaborn ^
     --exclude-module=scipy ^
     --exclude-module=pandas ^
     --exclude-module=jupyter ^

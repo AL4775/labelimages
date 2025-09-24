@@ -11,6 +11,10 @@ import time
 import cv2
 import numpy as np
 import logging
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import seaborn as sns
 
 LABELS = ["(Unclassified)", "no code", "read failure", "occluded", "image quality", "damaged", "other"]
 
@@ -161,7 +165,14 @@ class ImageLabelTool:
                                              command=self.generate_filter_folder,
                                              bg="#9C27B0", fg="white", font=("Arial", 8, "bold"),
                                              padx=8, pady=3, relief="flat")
-        self.btn_gen_filter_folder.pack(side=tk.LEFT)
+        self.btn_gen_filter_folder.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Charts button for statistics visualization
+        self.btn_show_charts = tk.Button(toolbar_frame, text="Show Charts", 
+                                       command=self.show_statistics_charts,
+                                       bg="#FF5722", fg="white", font=("Arial", 8, "bold"),
+                                       padx=8, pady=3, relief="flat")
+        self.btn_show_charts.pack(side=tk.LEFT)
 
         # Main content area - horizontal layout (now without left panel)
         content_frame = tk.Frame(main_frame, bg="#FAFAFA")
@@ -1077,6 +1088,313 @@ class ImageLabelTool:
             }
         
         return stats
+
+    def show_statistics_charts(self):
+        """Display fancy histogram and pie charts for statistics visualization"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            messagebox.showwarning("No Data", "Please select a folder with images first.")
+            return
+        
+        # Create a new window for charts
+        charts_window = tk.Toplevel(self.root)
+        charts_window.title("Statistics Charts - Image Label Tool")
+        charts_window.geometry("1200x800")
+        charts_window.configure(bg="#FAFAFA")
+        
+        # Create notebook for multiple chart tabs
+        from tkinter import ttk
+        notebook = ttk.Notebook(charts_window)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Tab 1: Image Classification Histogram
+        hist_frame = ttk.Frame(notebook)
+        notebook.add(hist_frame, text="📊 Image Distribution")
+        self.create_image_histogram(hist_frame)
+        
+        # Tab 2: Parcel Classification Pie Chart
+        pie_frame = ttk.Frame(notebook)
+        notebook.add(pie_frame, text="🥧 Parcel Breakdown")
+        self.create_parcel_pie_chart(pie_frame)
+        
+        # Tab 3: Progress and Stats Overview
+        overview_frame = ttk.Frame(notebook)
+        notebook.add(overview_frame, text="📈 Progress Overview")
+        self.create_progress_overview(overview_frame)
+        
+        # Center the window
+        charts_window.transient(self.root)
+        charts_window.grab_set()
+
+    def create_image_histogram(self, parent_frame):
+        """Create a fancy histogram showing image classification distribution"""
+        # Set up matplotlib style
+        try:
+            plt.style.use('seaborn-v0_8-darkgrid')
+        except:
+            plt.style.use('default')
+        
+        # Calculate image counts
+        image_counts = {label: 0 for label in LABELS}
+        if hasattr(self, 'all_image_paths') and self.all_image_paths:
+            for path in self.all_image_paths:
+                if path in self.labels and self.labels[path] != "(Unclassified)":
+                    label = self.labels[path]
+                    if label in image_counts:
+                        image_counts[label] += 1
+                else:
+                    image_counts["(Unclassified)"] += 1
+        
+        # Prepare data for plotting
+        labels = list(image_counts.keys())
+        counts = list(image_counts.values())
+        
+        # Define attractive colors for each category
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF']
+        
+        # Create the figure and axis
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Create bars with custom styling
+        bars = ax.bar(range(len(labels)), counts, color=colors[:len(labels)], 
+                     alpha=0.8, edgecolor='white', linewidth=2)
+        
+        # Customize the plot
+        ax.set_title('📊 Image Classification Distribution', fontsize=16, fontweight='bold', pad=20)
+        ax.set_xlabel('Classification Labels', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Number of Images', fontsize=12, fontweight='bold')
+        
+        # Set x-axis labels with rotation
+        ax.set_xticks(range(len(labels)))
+        ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=10)
+        
+        # Add value labels on top of bars
+        for i, (bar, count) in enumerate(zip(bars, counts)):
+            if count > 0:
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(counts)*0.01,
+                       str(count), ha='center', va='bottom', fontweight='bold', fontsize=10)
+        
+        # Add grid for better readability
+        ax.grid(True, alpha=0.3, axis='y')
+        ax.set_axisbelow(True)
+        
+        # Improve layout
+        plt.tight_layout()
+        
+        # Embed the plot in tkinter
+        canvas = FigureCanvasTkAgg(fig, master=parent_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def create_parcel_pie_chart(self, parent_frame):
+        """Create a fancy pie chart showing parcel classification distribution"""
+        # Set up matplotlib style
+        try:
+            plt.style.use('seaborn-v0_8-whitegrid')
+        except:
+            plt.style.use('default')
+        
+        # Calculate parcel statistics
+        parcel_labels_dict = self.calculate_parcel_labels()
+        
+        if not parcel_labels_dict:
+            # Show message if no parcel data
+            label = tk.Label(parent_frame, text="📦 No parcel data available\nPlease classify some images first.",
+                           font=("Arial", 14), bg="#FAFAFA", fg="#666666")
+            label.pack(expand=True)
+            return
+        
+        # Count parcels by label
+        parcel_counts = {}
+        for parcel_label in parcel_labels_dict.values():
+            parcel_counts[parcel_label] = parcel_counts.get(parcel_label, 0) + 1
+        
+        # Prepare data for pie chart
+        labels = list(parcel_counts.keys())
+        sizes = list(parcel_counts.values())
+        
+        # Define attractive colors
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF']
+        
+        # Create the figure
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+        
+        # Create pie chart
+        wedges, texts, autotexts = ax1.pie(sizes, labels=labels, colors=colors[:len(labels)],
+                                          autopct='%1.1f%%', startangle=90, 
+                                          explode=[0.05] * len(labels),
+                                          shadow=True, textprops={'fontsize': 10})
+        
+        # Beautify the pie chart
+        ax1.set_title('🥧 Parcel Classification Breakdown', fontsize=14, fontweight='bold', pad=20)
+        
+        # Make percentage text bold
+        for autotext in autotexts:
+            autotext.set_color('white')
+            autotext.set_fontweight('bold')
+        
+        # Create a detailed breakdown table
+        ax2.axis('tight')
+        ax2.axis('off')
+        
+        # Prepare table data
+        total_parcels = sum(sizes)
+        table_data = []
+        for label, count in zip(labels, sizes):
+            percentage = (count / total_parcels) * 100 if total_parcels > 0 else 0
+            table_data.append([label, str(count), f"{percentage:.1f}%"])
+        
+        table_data.append(['TOTAL', str(total_parcels), '100.0%'])
+        
+        # Create table
+        table = ax2.table(cellText=table_data,
+                         colLabels=['Classification', 'Count', 'Percentage'],
+                         cellLoc='center',
+                         loc='center',
+                         colColours=['#E3F2FD', '#E3F2FD', '#E3F2FD'])
+        
+        table.auto_set_font_size(False)
+        table.set_fontsize(10)
+        table.scale(1, 2)
+        
+        # Style the table
+        for i in range(len(table_data) + 1):
+            for j in range(3):
+                cell = table[(i, j)]
+                if i == 0:  # Header row
+                    cell.set_text_props(weight='bold')
+                    cell.set_facecolor('#1976D2')
+                    cell.set_text_props(color='white')
+                elif i == len(table_data):  # Total row
+                    cell.set_text_props(weight='bold')
+                    cell.set_facecolor('#E8F5E8')
+        
+        ax2.set_title('📊 Detailed Breakdown', fontsize=12, fontweight='bold')
+        
+        plt.tight_layout()
+        
+        # Embed the plot in tkinter
+        canvas = FigureCanvasTkAgg(fig, master=parent_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def create_progress_overview(self, parent_frame):
+        """Create a comprehensive progress overview with multiple visualizations"""
+        # Set up the figure with subplots
+        fig = plt.figure(figsize=(12, 8))
+        
+        # Create a 2x2 grid for multiple charts
+        ax1 = plt.subplot(2, 2, 1)  # Progress pie chart
+        ax2 = plt.subplot(2, 2, 2)  # Read rate bars
+        ax3 = plt.subplot(2, 1, 2)   # Combined overview bar chart
+        
+        # 1. Progress Pie Chart (Classified vs Unclassified)
+        if hasattr(self, 'all_image_paths') and self.all_image_paths:
+            total_images = len(self.all_image_paths)
+            classified_images = len([path for path in self.all_image_paths 
+                                   if path in self.labels and self.labels[path] != "(Unclassified)"])
+            unclassified_images = total_images - classified_images
+            
+            progress_sizes = [classified_images, unclassified_images]
+            progress_labels = [f'Classified\n({classified_images})', f'Unclassified\n({unclassified_images})']
+            progress_colors = ['#4CAF50', '#FF5722']
+            
+            wedges, texts, autotexts = ax1.pie(progress_sizes, labels=progress_labels, 
+                                              colors=progress_colors, autopct='%1.1f%%',
+                                              startangle=90, explode=[0.05, 0.05],
+                                              shadow=True)
+            
+            for autotext in autotexts:
+                autotext.set_color('white')
+                autotext.set_fontweight('bold')
+                
+            ax1.set_title('📈 Classification Progress', fontweight='bold', fontsize=12)
+        
+        # 2. Read Rate Bars (if total parcels is set)
+        try:
+            total_entered = int(self.total_parcels_var.get()) if self.total_parcels_var.get() else 0
+            if total_entered > 0:
+                parcel_labels_dict = self.calculate_parcel_labels()
+                actual_parcels = len(parcel_labels_dict)
+                
+                parcels_no_code = sum(1 for label in parcel_labels_dict.values() if label == "no code")
+                parcels_read_failure = sum(1 for label in parcel_labels_dict.values() if label == "read failure")
+                
+                total_readable = total_entered - actual_parcels + parcels_read_failure
+                
+                # Calculate rates
+                gross_rate = ((total_entered - actual_parcels) / total_entered * 100) if total_entered > 0 else 0
+                net_rate = ((total_readable - parcels_read_failure) / total_readable * 100) if total_readable > 0 else 0
+                
+                rates = [gross_rate, net_rate]
+                rate_labels = ['Gross Read Rate', 'Net Read Rate']
+                rate_colors = ['#2196F3', '#FF9800']
+                
+                bars = ax2.bar(rate_labels, rates, color=rate_colors, alpha=0.8, edgecolor='white', linewidth=2)
+                ax2.set_ylim(0, 100)
+                ax2.set_ylabel('Percentage (%)', fontweight='bold')
+                ax2.set_title('📊 Read Rates', fontweight='bold', fontsize=12)
+                
+                # Add percentage labels on bars
+                for bar, rate in zip(bars, rates):
+                    ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+                           f'{rate:.1f}%', ha='center', va='bottom', fontweight='bold')
+            else:
+                ax2.text(0.5, 0.5, '📝 Enter total parcels\nto see read rates', 
+                        transform=ax2.transAxes, ha='center', va='center',
+                        fontsize=12, bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray"))
+                ax2.set_xticks([])
+                ax2.set_yticks([])
+        except Exception as e:
+            ax2.text(0.5, 0.5, '❌ Read rate calculation\nunavailable', 
+                    transform=ax2.transAxes, ha='center', va='center',
+                    fontsize=12, bbox=dict(boxstyle="round,pad=0.3", facecolor="lightcoral", alpha=0.5))
+        
+        # 3. Combined Overview Bar Chart
+        image_counts = {label: 0 for label in LABELS}
+        if hasattr(self, 'all_image_paths') and self.all_image_paths:
+            for path in self.all_image_paths:
+                if path in self.labels and self.labels[path] != "(Unclassified)":
+                    label = self.labels[path]
+                    if label in image_counts:
+                        image_counts[label] += 1
+                else:
+                    image_counts["(Unclassified)"] += 1
+        
+        # Filter out zero counts for cleaner display
+        filtered_labels = []
+        filtered_counts = []
+        filtered_colors = []
+        base_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF']
+        
+        for i, (label, count) in enumerate(image_counts.items()):
+            if count > 0:
+                filtered_labels.append(label)
+                filtered_counts.append(count)
+                filtered_colors.append(base_colors[i % len(base_colors)])
+        
+        if filtered_counts:
+            bars = ax3.bar(range(len(filtered_labels)), filtered_counts, 
+                          color=filtered_colors, alpha=0.8, edgecolor='white', linewidth=2)
+            
+            ax3.set_xticks(range(len(filtered_labels)))
+            ax3.set_xticklabels(filtered_labels, rotation=45, ha='right')
+            ax3.set_ylabel('Count', fontweight='bold')
+            ax3.set_title('📊 Complete Classification Overview', fontweight='bold', fontsize=14, pad=15)
+            
+            # Add count labels on bars
+            for bar, count in zip(bars, filtered_counts):
+                ax3.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(filtered_counts)*0.01,
+                       str(count), ha='center', va='bottom', fontweight='bold')
+            
+            ax3.grid(True, alpha=0.3, axis='y')
+            ax3.set_axisbelow(True)
+        
+        plt.tight_layout()
+        
+        # Embed the plot in tkinter
+        canvas = FigureCanvasTkAgg(fig, master=parent_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def update_counts(self):
         counts = {label: 0 for label in LABELS}

@@ -69,7 +69,10 @@ pyinstaller ^
   --hidden-import=tkinter ^
   --hidden-import=tkinter.filedialog ^
   --hidden-import=tkinter.messagebox ^
-  --exclude-module=matplotlib ^
+  --hidden-import=matplotlib ^
+  --hidden-import=matplotlib.pyplot ^
+  --hidden-import=matplotlib.backends.backend_tkagg ^
+  --hidden-import=seaborn ^
   --exclude-module=scipy ^
   --exclude-module=pandas ^
   --exclude-module=jupyter ^
