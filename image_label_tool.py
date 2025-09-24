@@ -19,8 +19,8 @@ class ImageLabelTool:
         self.root = root
         self.root.title("Image Label Tool")
         self.root.configure(bg="#FAFAFA")  # Very light gray background
-        self.root.minsize(1600, 900)  # Set minimum window size - increased for wider radio button layout
-        self.root.geometry("1800x950")  # Set initial window size - wider to accommodate all 7 label categories
+        self.root.minsize(1200, 700)  # Reduced minimum window size for more compact layout
+        self.root.geometry("1400x750")  # Reduced initial window size - more compact and manageable
         self.image_paths = []
         self.current_index = 0
         self.labels = {}
@@ -87,7 +87,7 @@ class ImageLabelTool:
 
     def setup_ui(self):
         # Main container with padding
-        main_frame = tk.Frame(self.root, bg="#FAFAFA", padx=15, pady=15)
+        main_frame = tk.Frame(self.root, bg="#FAFAFA", padx=10, pady=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Top section: Folder selection and total parcels
@@ -96,17 +96,24 @@ class ImageLabelTool:
         
         # Folder selection
         self.btn_select = tk.Button(top_frame, text="Select Folder", command=self.select_folder,
-                                  bg="#A5D6A7", fg="white", font=("Arial", 12, "bold"),
-                                  padx=20, pady=8, relief="flat")
+                                  bg="#A5D6A7", fg="white", font=("Arial", 10, "bold"),
+                                  padx=15, pady=6, relief="flat")
         self.btn_select.pack(side=tk.LEFT)
+        
+        # Folder path display
+        self.folder_path_var = tk.StringVar(value="No folder selected")
+        self.folder_path_label = tk.Label(top_frame, textvariable=self.folder_path_var, 
+                                         bg="#FAFAFA", font=("Arial", 9), fg="#666666",
+                                         wraplength=600, justify=tk.LEFT, anchor="w")
+        self.folder_path_label.pack(side=tk.LEFT, padx=(10, 0), fill=tk.X, expand=True)
         
         # Total number of parcels input (right side)
         total_frame = tk.Frame(top_frame, bg="#FAFAFA")
         total_frame.pack(side=tk.RIGHT)
-        tk.Label(total_frame, text="Total number of parcels:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
+        tk.Label(total_frame, text="Total number of parcels:", bg="#FAFAFA", font=("Arial", 9)).pack(side=tk.LEFT)
         self.total_parcels_var = tk.StringVar()
-        self.total_parcels_entry = tk.Entry(total_frame, textvariable=self.total_parcels_var, width=10,
-                                          font=("Arial", 10), bg="white", relief="solid", bd=1)
+        self.total_parcels_entry = tk.Entry(total_frame, textvariable=self.total_parcels_var, width=8,
+                                          font=("Arial", 9), bg="white", relief="solid", bd=1)
         self.total_parcels_entry.pack(side=tk.LEFT, padx=(5, 0))
         self.total_parcels_entry.bind('<KeyRelease>', self.on_total_changed)
         
@@ -114,7 +121,7 @@ class ImageLabelTool:
         filter_frame = tk.Frame(top_frame, bg="#FAFAFA")
         filter_frame.pack(side=tk.LEFT, padx=(20, 0))
         tk.Label(filter_frame, text="Filter:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
-        self.filter_var = tk.StringVar(value="All images")
+        self.filter_var = tk.StringVar(value="(Unclassified) only")
         filter_options = ["All images", "(Unclassified) only", "no code only", "read failure only", "occluded only", "image quality only", "damaged only", "other only"]
         self.filter_menu = tk.OptionMenu(filter_frame, self.filter_var, *filter_options, command=self.on_filter_changed)
         self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
@@ -124,28 +131,28 @@ class ImageLabelTool:
         content_frame = tk.Frame(main_frame, bg="#FAFAFA")
         content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
-        # Left panel for controls
-        left_panel = tk.Frame(content_frame, bg="#FAFAFA", width=220)
-        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        # Left panel for controls - reduced width
+        left_panel = tk.Frame(content_frame, bg="#FAFAFA", width=180)
+        left_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
         left_panel.pack_propagate(False)  # Maintain fixed width
         
         # Center panel for image
         center_panel = tk.Frame(content_frame, bg="#FAFAFA")
-        center_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        center_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
         
-        # Right panel for statistics
-        right_panel = tk.Frame(content_frame, bg="#FAFAFA", width=350)
+        # Right panel for statistics - reduced width
+        right_panel = tk.Frame(content_frame, bg="#FAFAFA", width=300)
         right_panel.pack(side=tk.RIGHT, fill=tk.Y)
         right_panel.pack_propagate(False)  # Maintain fixed width
 
         # === LEFT PANEL: Scale and Zoom Controls ===
-        tk.Label(left_panel, text="View Controls", bg="#FAFAFA", font=("Arial", 11, "bold"), fg="#424242").pack(pady=(0, 10))
+        tk.Label(left_panel, text="View Controls", bg="#FAFAFA", font=("Arial", 10, "bold"), fg="#424242").pack(pady=(0, 8))
         
         # Scale info
         self.scale_info_var = tk.StringVar()
         self.scale_info_label = tk.Label(left_panel, textvariable=self.scale_info_var, 
-                                       bg="#FAFAFA", font=("Arial", 9), fg="#757575",
-                                       wraplength=180, justify=tk.LEFT)
+                                       bg="#FAFAFA", font=("Arial", 8), fg="#757575",
+                                       wraplength=150, justify=tk.LEFT)
         self.scale_info_label.pack(pady=(0, 5))
         
         # 1:1 Scale button
@@ -239,8 +246,8 @@ class ImageLabelTool:
         
         # Previous button (left side)
         self.btn_prev = tk.Button(nav_label_container, text="<< Prev", command=self.prev_image,
-                                bg="#90CAF9", fg="white", font=("Arial", 10, "bold"),
-                                padx=15, pady=8, relief="flat")
+                                bg="#90CAF9", fg="white", font=("Arial", 9, "bold"),
+                                padx=10, pady=5, relief="flat")
         self.btn_prev.pack(side=tk.LEFT, padx=(0, 15))
         
         # Label frame (center)
@@ -283,30 +290,30 @@ class ImageLabelTool:
             display_text = label + label_shortcuts[label]
             rb = tk.Radiobutton(radio_container, text=display_text, variable=self.label_var, 
                               value=label, command=self.set_label_radio,
-                              bg=label_colors[label], font=("Arial", 10, "bold"),
-                              selectcolor="white", padx=10, pady=5)
-            rb.grid(row=0, column=i, padx=5)
+                              bg=label_colors[label], font=("Arial", 9, "bold"),
+                              selectcolor="white", padx=6, pady=3)
+            rb.grid(row=0, column=i, padx=3)
             self.radio_buttons.append(rb)
         
         # Next button (right side)
         self.btn_next = tk.Button(nav_label_container, text="Next >>", command=self.next_image,
-                                bg="#90CAF9", fg="white", font=("Arial", 10, "bold"),
-                                padx=15, pady=8, relief="flat")
-        self.btn_next.pack(side=tk.RIGHT, padx=(15, 0))
+                                bg="#90CAF9", fg="white", font=("Arial", 9, "bold"),
+                                padx=10, pady=5, relief="flat")
+        self.btn_next.pack(side=tk.RIGHT, padx=(10, 0))
         
         # Jump to Next Unclassified button (right side)
         self.btn_jump_unclassified = tk.Button(nav_label_container, text="Jump to Next Unclassified", 
                                               command=self.jump_to_next_unclassified,
-                                              bg="#FF9800", fg="white", font=("Arial", 10, "bold"),
-                                              padx=15, pady=8, relief="flat")
-        self.btn_jump_unclassified.pack(side=tk.RIGHT, padx=(15, 0))
+                                              bg="#FF9800", fg="white", font=("Arial", 9, "bold"),
+                                              padx=10, pady=5, relief="flat")
+        self.btn_jump_unclassified.pack(side=tk.RIGHT, padx=(10, 0))
 
         # === RIGHT PANEL: Statistics ===
-        tk.Label(right_panel, text="Statistics", bg="#FAFAFA", font=("Arial", 11, "bold"), fg="#424242").pack(pady=(0, 15))
+        tk.Label(right_panel, text="Statistics", bg="#FAFAFA", font=("Arial", 10, "bold"), fg="#424242").pack(pady=(0, 8))
         
         # Progress section
-        progress_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=10, pady=10)
-        progress_section.pack(fill=tk.X, pady=(0, 10))
+        progress_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=8, pady=8)
+        progress_section.pack(fill=tk.X, pady=(0, 8))
         
         tk.Label(progress_section, text="Progress", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#5E88D8").pack()
         self.progress_var = tk.StringVar()
@@ -315,8 +322,8 @@ class ImageLabelTool:
         self.progress_label.pack(pady=(5, 0))
         
         # Image counts section
-        counts_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=10, pady=10)
-        counts_section.pack(fill=tk.X, pady=(0, 10))
+        counts_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=8, pady=8)
+        counts_section.pack(fill=tk.X, pady=(0, 8))
         
         tk.Label(counts_section, text="Image Counts", bg="#F5F5F5", font=("Arial", 10, "bold"), fg="#81C784").pack()
         self.count_var = tk.StringVar()
@@ -344,20 +351,20 @@ class ImageLabelTool:
                                          font=("Arial", 9), fg="#424242", bg="#F5F5F5", wraplength=220)
         self.parcel_stats_label.pack(pady=(5, 0))
 
-        # Auto no-code / code classification section
+        # Auto monitoring section (with checkbox hidden)
         auto_detect_section = tk.Frame(right_panel, bg="#FFF3E0", relief="solid", bd=1, padx=10, pady=10)
-        auto_detect_section.pack(fill=tk.X, pady=(0, 10))
+        auto_detect_section.pack(fill=tk.X, pady=(0, 8))  # RESTORED: Show the monitoring section
         
-        tk.Label(auto_detect_section, text="Auto detect new files", bg="#FFF3E0", font=("Arial", 10, "bold"), fg="#F57C00").pack()
+        tk.Label(auto_detect_section, text="Auto Monitor New Files", bg="#FFF3E0", font=("Arial", 10, "bold"), fg="#F57C00").pack()
         
-        # Checkbox for auto barcode detection on new files
+        # Checkbox for auto barcode detection on new files (HIDDEN)
         self.auto_detect_enabled = tk.BooleanVar(value=False)
         self.auto_detect_checkbox = tk.Checkbutton(auto_detect_section, 
                                                  text="Auto detect barcodes on new files",
                                                  variable=self.auto_detect_enabled,
                                                  bg="#FFF3E0", font=("Arial", 9),
                                                  anchor="w", justify="left")
-        self.auto_detect_checkbox.pack(pady=(10, 5), fill=tk.X)
+        # self.auto_detect_checkbox.pack(pady=(10, 5), fill=tk.X)  # HIDDEN: Comment out the pack() call
         
         # Progress indicator for auto classification
         self.auto_detect_progress_var = tk.StringVar()
@@ -379,8 +386,13 @@ class ImageLabelTool:
         tk.Label(timer_frame, text="every", bg="#FFF3E0", font=("Arial", 9)).pack(side=tk.LEFT, padx=(0, 5))
         
         self.auto_timer_interval = tk.StringVar(value="10")
+        
+        # Register validation function for numeric input
+        vcmd = (self.root.register(self.validate_numeric_input), '%P')
+        
         self.auto_timer_entry = tk.Entry(timer_frame, textvariable=self.auto_timer_interval,
-                                        width=5, font=("Arial", 9), justify="center")
+                                        width=5, font=("Arial", 9), justify="center",
+                                        validate='key', validatecommand=vcmd)
         self.auto_timer_entry.pack(side=tk.LEFT, padx=(0, 2))
         
         tk.Label(timer_frame, text="min", bg="#FFF3E0", font=("Arial", 9)).pack(side=tk.LEFT)
@@ -423,11 +435,25 @@ class ImageLabelTool:
         # Set focus to root window to capture keyboard events
         self.root.focus_set()
 
+    def validate_numeric_input(self, new_value):
+        """Validate that input contains only numbers and decimal points"""
+        if new_value == "":
+            return True  # Allow empty string for clearing
+        try:
+            float(new_value)
+            return True
+        except ValueError:
+            return False
+
     def select_folder(self):
         folder = filedialog.askdirectory()
         if not folder:
             return
         self.folder_path = folder
+        
+        # Update the folder path display
+        self.folder_path_var.set(f"Current folder: {folder}")
+        
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.csv_filename = os.path.join(folder, f"revision_{timestamp}.csv")
         
@@ -601,13 +627,37 @@ class ImageLabelTool:
         # If filtering is active, reapply filter in case current image no longer matches
         if self.filter_var.get() != "All images":
             current_path = path
+            current_index_before_filter = self.current_index
             self.apply_filter()
-            # Try to find the image we were just on, or go to first if not found
+            
+            # Try to find the image we were just on first
             if current_path in self.image_paths:
                 self.current_index = self.image_paths.index(current_path)
+                self.show_image()
             else:
-                self.current_index = 0
-            self.show_image()
+                # Image no longer matches filter, find next appropriate image
+                # Look for the next image at or after the current position in the original list
+                found_next = False
+                
+                # Get the original position in all_image_paths
+                if current_path in self.all_image_paths:
+                    original_position = self.all_image_paths.index(current_path)
+                    
+                    # Look for the next image in all_image_paths that's also in filtered list
+                    for i in range(original_position + 1, len(self.all_image_paths)):
+                        if self.all_image_paths[i] in self.image_paths:
+                            self.current_index = self.image_paths.index(self.all_image_paths[i])
+                            found_next = True
+                            break
+                
+                # If no image found after current position, wrap around to beginning
+                if not found_next and self.image_paths:
+                    self.current_index = 0
+                elif not self.image_paths:
+                    # No images match filter anymore
+                    self.current_index = 0
+                
+                self.show_image()
 
     def assign_parcel_index_if_needed(self, image_path):
         """Assign a parcel index to a parcel when it gets its first classification"""
@@ -642,44 +692,86 @@ class ImageLabelTool:
     def label_shortcut_q(self, event=None):
         """Keyboard shortcut: Q for 'no code'"""
         if self.image_paths:
+            # Check if current image was unclassified before setting new label
+            current_path = self.image_paths[self.current_index]
+            was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
+            
             self.label_var.set("no code")
             self.set_label_radio()
-            self.jump_to_next_unclassified()
+            
+            # Only jump to next unclassified if this image was previously unclassified
+            if was_unclassified:
+                self.jump_to_next_unclassified()
 
     def label_shortcut_w(self, event=None):
         """Keyboard shortcut: W for 'read failure'"""
         if self.image_paths:
+            # Check if current image was unclassified before setting new label
+            current_path = self.image_paths[self.current_index]
+            was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
+            
             self.label_var.set("read failure")
             self.set_label_radio()
-            self.jump_to_next_unclassified()
+            
+            # Only jump to next unclassified if this image was previously unclassified
+            if was_unclassified:
+                self.jump_to_next_unclassified()
 
     def label_shortcut_e(self, event=None):
         """Keyboard shortcut: E for 'occluded'"""
         if self.image_paths:
+            # Check if current image was unclassified before setting new label
+            current_path = self.image_paths[self.current_index]
+            was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
+            
             self.label_var.set("occluded")
             self.set_label_radio()
-            self.jump_to_next_unclassified()
+            
+            # Only jump to next unclassified if this image was previously unclassified
+            if was_unclassified:
+                self.jump_to_next_unclassified()
 
     def label_shortcut_r(self, event=None):
         """Keyboard shortcut: R for 'image quality'"""
         if self.image_paths:
+            # Check if current image was unclassified before setting new label
+            current_path = self.image_paths[self.current_index]
+            was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
+            
             self.label_var.set("image quality")
             self.set_label_radio()
-            self.jump_to_next_unclassified()
+            
+            # Only jump to next unclassified if this image was previously unclassified
+            if was_unclassified:
+                self.jump_to_next_unclassified()
 
     def label_shortcut_t(self, event=None):
         """Keyboard shortcut: T for 'damaged'"""
         if self.image_paths:
+            # Check if current image was unclassified before setting new label
+            current_path = self.image_paths[self.current_index]
+            was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
+            
             self.label_var.set("damaged")
             self.set_label_radio()
-            self.jump_to_next_unclassified()
+            
+            # Only jump to next unclassified if this image was previously unclassified
+            if was_unclassified:
+                self.jump_to_next_unclassified()
 
     def label_shortcut_y(self, event=None):
         """Keyboard shortcut: Y for 'other'"""
         if self.image_paths:
+            # Check if current image was unclassified before setting new label
+            current_path = self.image_paths[self.current_index]
+            was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
+            
             self.label_var.set("other")
             self.set_label_radio()
-            self.jump_to_next_unclassified()
+            
+            # Only jump to next unclassified if this image was previously unclassified
+            if was_unclassified:
+                self.jump_to_next_unclassified()
 
     def prev_image_shortcut(self, event=None):
         """Keyboard shortcut: Left arrow for previous image"""
@@ -847,6 +939,14 @@ class ImageLabelTool:
         # Multi-line format for better readability
         progress_text = f"Progress:\n{classified_images}/{total_images} classified\n({unclassified_images} remaining)"
         self.progress_var.set(progress_text)
+        
+        # Change text color and weight based on remaining count
+        if unclassified_images > 0:
+            # Bold red text when there are remaining images
+            self.progress_label.config(fg="red", font=("Arial", 9, "bold"))
+        else:
+            # Normal green text when all images are classified
+            self.progress_label.config(fg="#2E7D32", font=("Arial", 9, "normal"))
 
     def update_current_label_status(self):
         """Update the current image label status indicator"""
@@ -1033,19 +1133,30 @@ class ImageLabelTool:
         self.parcel_stats_var.set("\n".join(lines))
 
     def auto_detect_total_groups(self):
-        """Auto-detect total number of groups by counting unique ID+Timestamp combinations in filenames"""
+        """Auto-detect total number of parcels by finding the highest ID value from filenames"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             return
         
-        unique_groups = set()
+        max_id = 0
         for path in self.all_image_paths:
-            group_id = self.get_parcel_number(path)
-            if group_id:  # Only add non-empty group IDs
-                unique_groups.add(group_id)
+            filename = os.path.basename(path)
+            filename_without_ext = os.path.splitext(filename)[0]
+            
+            # Split by underscore to get parts
+            parts = filename_without_ext.split('_')
+            if len(parts) >= 1:
+                try:
+                    # Get ID (first part before first underscore) and convert to number
+                    id_part = parts[0]
+                    id_number = int(id_part)
+                    max_id = max(max_id, id_number)
+                except ValueError:
+                    # Skip files where the first part is not a number
+                    continue
         
-        if len(unique_groups) > 0:
-            # Set the total parcels field with the count of unique ID+timestamp groups
-            self.total_parcels_var.set(str(len(unique_groups)))
+        if max_id > 0:
+            # Set the total parcels field with the highest ID value found
+            self.total_parcels_var.set(str(max_id))
             # Update statistics immediately
             self.update_total_stats()
 
@@ -1631,8 +1742,8 @@ class ImageLabelTool:
         self.auto_timer_button.config(text="Stop", bg="#f44336", activebackground="#d32f2f")
         self.auto_timer_entry.config(state='disabled')
         
-        # Disable all controls while auto-timer is running
-        self.disable_ui_controls()
+        # Disable only folder selection while monitoring (keep radio buttons and filter active)
+        self.disable_ui_controls_for_monitoring()
         
         interval_ms = int(interval_minutes * 60 * 1000)  # Convert minutes to milliseconds
         self.auto_timer_job = self.root.after(interval_ms, self.run_auto_detection_timer)
@@ -1641,7 +1752,7 @@ class ImageLabelTool:
         if self.auto_detect_enabled.get():
             self.auto_timer_status_var.set("Monitoring for new files (auto-detection enabled)")
         else:
-            self.auto_timer_status_var.set("Monitoring for new files (auto-detection disabled)")
+            self.auto_timer_status_var.set("Monitoring for new files")
         self.start_countdown(interval_minutes)
         
     def stop_auto_timer(self):
@@ -1658,8 +1769,8 @@ class ImageLabelTool:
         self.auto_timer_button.config(text="Start", bg="#4CAF50", activebackground="#45a049")
         self.auto_timer_entry.config(state='normal')
         
-        # Re-enable all controls when auto-timer is stopped
-        self.enable_ui_controls()
+        # Re-enable folder selection when monitoring is stopped
+        self.enable_ui_controls_for_monitoring()
         
         self.auto_timer_status_var.set("Monitoring stopped")
 
@@ -1778,12 +1889,14 @@ class ImageLabelTool:
                 # Run auto-detection on new files only
                 self.process_auto_detection_on_new_files(new_unlabeled_files)
             else:
-                self.auto_timer_status_var.set(f"Found {len(new_unlabeled_files)} new files\n(Auto-detection disabled)")
+                self.auto_timer_status_var.set(f"Found {len(new_unlabeled_files)} new files")
                 # Update the CSV to mark these as unclassified
                 for file_path in new_unlabeled_files:
                     self.labels[file_path] = "(Unclassified)"
                 self.save_csv()
                 self.update_counts()
+                # Refresh the UI to show the new images
+                self.apply_filter()
         else:
             self.auto_timer_status_var.set(f"[{current_time}] No new unlabeled files found")
             self.logger.info("Timer check: No new unlabeled files found")
@@ -1819,12 +1932,20 @@ class ImageLabelTool:
         self.btn_zoom_in.config(state='disabled')
         self.btn_zoom_out.config(state='disabled')
         
-        # Disable checkbox
-        self.auto_detect_checkbox.config(state='disabled')
+        # Disable checkbox (COMMENTED OUT - AUTO DETECT HIDDEN)
+        # self.auto_detect_checkbox.config(state='disabled')
         
         # Disable entry fields
         self.total_parcels_entry.config(state='disabled')
         # Note: auto_timer_entry is already disabled when timer is running
+
+    def disable_ui_controls_for_monitoring(self):
+        """Disable only folder selection during monitoring - keep radio buttons and filter active"""
+        # Only disable folder selection
+        self.btn_select.config(state='disabled')
+        
+        # Keep radio buttons, navigation, filter, and other controls enabled
+        # This allows users to continue labeling while monitoring is active
 
     def enable_ui_controls(self):
         """Re-enable all UI controls after auto-classification completes"""
@@ -1844,11 +1965,16 @@ class ImageLabelTool:
         self.btn_zoom_in.config(state='normal')
         self.btn_zoom_out.config(state='normal')
         
-        # Enable checkbox
-        self.auto_detect_checkbox.config(state='normal')
+        # Enable checkbox (COMMENTED OUT - AUTO DETECT HIDDEN)
+        # self.auto_detect_checkbox.config(state='normal')
         
         # Enable entry fields
         self.total_parcels_entry.config(state='normal')
+
+    def enable_ui_controls_for_monitoring(self):
+        """Re-enable folder selection after monitoring stops"""
+        # Re-enable folder selection
+        self.btn_select.config(state='normal')
 
     def process_auto_detection_silent(self, unclassified_images):
         """Process auto classification silently without popup dialogs"""
