@@ -50,8 +50,8 @@ echo.
     --hidden-import=matplotlib.pyplot ^
     --hidden-import=matplotlib.backends.backend_tkagg ^
     --hidden-import=seaborn ^
+    --hidden-import=pandas ^
     --exclude-module=scipy ^
-    --exclude-module=pandas ^
     --exclude-module=jupyter ^
     --optimize=2 ^
     image_label_tool.py

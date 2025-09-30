@@ -587,11 +587,15 @@ class ImageLabelTool:
     def prev_image(self):
         if self.current_index > 0:
             self.current_index -= 1
+            # Reset to fit mode when navigating to new image
+            self.reset_to_fit_mode()
             self.show_image()
 
     def next_image(self):
         if self.current_index < len(self.image_paths) - 1:
             self.current_index += 1
+            # Reset to fit mode when navigating to new image
+            self.reset_to_fit_mode()
             self.show_image()
 
     def jump_to_next_unclassified(self):
@@ -1672,28 +1676,38 @@ class ImageLabelTool:
         if hasattr(self, 'image_paths') and self.image_paths:
             self.show_image()
 
+    def reset_to_fit_mode(self):
+        """Reset image display to fit mode (scale to fit window)"""
+        self.scale_1to1 = False
+        self.zoom_level = 1.0
+        self.btn_1to1.config(text="1:1 Scale", bg="#FFCC80")
+
     def zoom_in(self):
         """Increase zoom level"""
-        # Allow zoom in both fit mode and 1:1 mode
         if self.scale_1to1:
+            # Already in 1:1 mode, increment zoom level
             self.zoom_level = min(self.zoom_level * 1.25, 5.0)  # Max 500% zoom
         else:
-            # Switch to 1:1 mode and set zoom level
+            # Switch to 1:1 mode and start from current scale factor
             self.scale_1to1 = True
             self.btn_1to1.config(text="Fit to Window", bg="#A5D6A7")
-            self.zoom_level = 1.25  # Start with 125% zoom
+            # Start zoom from current fitted scale and increment it
+            current_scale = getattr(self, 'current_scale_factor', 1.0)
+            self.zoom_level = min(current_scale * 1.25, 5.0)  # Increment from current scale
         self.show_image()
 
     def zoom_out(self):
         """Decrease zoom level"""
-        # Allow zoom out in both fit mode and 1:1 mode
         if self.scale_1to1:
+            # Already in 1:1 mode, decrement zoom level
             self.zoom_level = max(self.zoom_level / 1.25, 0.1)  # Min 10% zoom
         else:
-            # Switch to 1:1 mode and set zoom level
+            # Switch to 1:1 mode and start from current scale factor
             self.scale_1to1 = True
             self.btn_1to1.config(text="Fit to Window", bg="#A5D6A7")
-            self.zoom_level = 0.8  # Start with 80% zoom
+            # Start zoom from current fitted scale and decrement it
+            current_scale = getattr(self, 'current_scale_factor', 1.0)
+            self.zoom_level = max(current_scale / 1.25, 0.1)  # Decrement from current scale
         self.show_image()
 
     def mouse_wheel_zoom(self, event):

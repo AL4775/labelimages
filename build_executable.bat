@@ -73,8 +73,8 @@ pyinstaller ^
   --hidden-import=matplotlib.pyplot ^
   --hidden-import=matplotlib.backends.backend_tkagg ^
   --hidden-import=seaborn ^
+  --hidden-import=pandas ^
   --exclude-module=scipy ^
-  --exclude-module=pandas ^
   --exclude-module=jupyter ^
   --exclude-module=IPython ^
   --exclude-module=plotly ^
