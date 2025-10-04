@@ -49,6 +49,9 @@ class ImageLabelTool:
         # Set up logging for barcode detection
         self.setup_logging()
         
+        # Set up proper cleanup when window is closed
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
         self.setup_ui()
 
     def setup_logging(self):
@@ -501,6 +504,20 @@ class ImageLabelTool:
             return True
         except ValueError:
             return False
+
+    def on_closing(self):
+        """Handle application cleanup before closing"""
+        # Cancel any running timer jobs to prevent errors
+        if hasattr(self, 'countdown_job') and self.countdown_job:
+            self.root.after_cancel(self.countdown_job)
+            self.countdown_job = None
+        
+        if hasattr(self, 'auto_timer_job') and self.auto_timer_job:
+            self.root.after_cancel(self.auto_timer_job)
+            self.auto_timer_job = None
+        
+        # Close the application
+        self.root.destroy()
 
     def select_folder(self):
         folder = filedialog.askdirectory()
