@@ -11,10 +11,21 @@ import time
 import cv2
 import numpy as np
 import logging
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import seaborn as sns
+
+# Optional imports for charting functionality
+HAS_MATPLOTLIB = False
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    import seaborn as sns
+    HAS_MATPLOTLIB = True
+except ImportError:
+    # Matplotlib not available - charting features will be disabled
+    plt = None
+    patches = None
+    FigureCanvasTkAgg = None
+    sns = None
 
 # Application version
 VERSION = "1.0.1"
@@ -172,13 +183,6 @@ class ImageLabelTool:
                                              bg="#9C27B0", fg="white", font=("Arial", 10, "bold"),
                                              padx=8, pady=3, relief="flat")
         self.btn_gen_filter_folder.pack(side=tk.LEFT, padx=(0, 10))
-
-        # Charts button for statistics visualization
-        self.btn_show_charts = tk.Button(toolbar_frame, text="Show Charts", 
-                                       command=self.show_statistics_charts,
-                                       bg="#FF5722", fg="white", font=("Arial", 10, "bold"),
-                                       padx=8, pady=3, relief="flat")
-        self.btn_show_charts.pack(side=tk.LEFT)
 
         # Main content area - horizontal layout (now without left panel)
         content_frame = tk.Frame(main_frame, bg="#FAFAFA")
@@ -398,6 +402,48 @@ class ImageLabelTool:
                                          justify=tk.LEFT, anchor="w")
         self.parcel_stats_label.pack(pady=(3, 0), fill=tk.X)
 
+        # === TAB 3: Charts (if matplotlib available) ===
+        if HAS_MATPLOTLIB:
+            # Charts tab - Image Distribution
+            charts_tab1 = tk.Frame(stats_notebook, bg="#FAFAFA")
+            stats_notebook.add(charts_tab1, text="Charts")
+            
+            # Create scrollable frame for charts
+            charts_canvas = tk.Canvas(charts_tab1, bg="#FAFAFA")
+            charts_scrollbar = ttk.Scrollbar(charts_tab1, orient="vertical", command=charts_canvas.yview)
+            self.charts_scrollable_frame = tk.Frame(charts_canvas, bg="#FAFAFA")
+            
+            self.charts_scrollable_frame.bind(
+                "<Configure>",
+                lambda e: charts_canvas.configure(scrollregion=charts_canvas.bbox("all"))
+            )
+            
+            charts_canvas.create_window((0, 0), window=self.charts_scrollable_frame, anchor="nw")
+            charts_canvas.configure(yscrollcommand=charts_scrollbar.set)
+            
+            charts_canvas.pack(side="left", fill="both", expand=True)
+            charts_scrollbar.pack(side="right", fill="y")
+            
+            # Parcel Charts tab
+            charts_tab2 = tk.Frame(stats_notebook, bg="#FAFAFA")
+            stats_notebook.add(charts_tab2, text="Parcel Charts")
+            
+            # Create scrollable frame for parcel charts
+            parcel_canvas = tk.Canvas(charts_tab2, bg="#FAFAFA")
+            parcel_scrollbar = ttk.Scrollbar(charts_tab2, orient="vertical", command=parcel_canvas.yview)
+            self.parcel_charts_scrollable_frame = tk.Frame(parcel_canvas, bg="#FAFAFA")
+            
+            self.parcel_charts_scrollable_frame.bind(
+                "<Configure>",
+                lambda e: parcel_canvas.configure(scrollregion=parcel_canvas.bbox("all"))
+            )
+            
+            parcel_canvas.create_window((0, 0), window=self.parcel_charts_scrollable_frame, anchor="nw")
+            parcel_canvas.configure(yscrollcommand=parcel_scrollbar.set)
+            
+            parcel_canvas.pack(side="left", fill="both", expand=True)
+            parcel_scrollbar.pack(side="right", fill="y")
+
         # Auto monitoring section content (now in Progress tab)
         tk.Label(auto_detect_section, text="Auto Monitor New Files", bg="#FFF3E0", font=("Arial", 12, "bold"), fg="#F57C00").pack()
         
@@ -549,6 +595,9 @@ class ImageLabelTool:
         self.load_csv()  # Try to load existing CSV if any
         self.auto_detect_total_groups()  # Auto-detect total number of parcels from filenames
         self.apply_filter()  # Apply current filter to show appropriate images
+        
+        # Update chart tabs with new data
+        self.update_chart_tabs()
 
     def show_image(self):
         if not self.image_paths:
@@ -1182,8 +1231,40 @@ class ImageLabelTool:
         
         return stats
 
+    def update_chart_tabs(self):
+        """Update the chart tabs with current data"""
+        if not HAS_MATPLOTLIB:
+            return
+            
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            return
+            
+        # Clear existing charts
+        if hasattr(self, 'charts_scrollable_frame'):
+            for widget in self.charts_scrollable_frame.winfo_children():
+                widget.destroy()
+                
+        if hasattr(self, 'parcel_charts_scrollable_frame'):
+            for widget in self.parcel_charts_scrollable_frame.winfo_children():
+                widget.destroy()
+        
+        # Create image distribution histogram in first chart tab
+        if hasattr(self, 'charts_scrollable_frame'):
+            self.create_image_histogram(self.charts_scrollable_frame)
+            
+        # Create parcel pie chart in second chart tab  
+        if hasattr(self, 'parcel_charts_scrollable_frame'):
+            self.create_parcel_pie_chart(self.parcel_charts_scrollable_frame)
+
     def show_statistics_charts(self):
         """Display fancy histogram and pie charts for statistics visualization"""
+        if not HAS_MATPLOTLIB:
+            messagebox.showwarning("Charts Unavailable", 
+                                 "Chart functionality is not available.\n"
+                                 "Matplotlib is required for charts but not installed.\n"
+                                 "The main application works without charts.")
+            return
+            
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             messagebox.showwarning("No Data", "Please select a folder with images first.")
             return
@@ -1509,6 +1590,9 @@ class ImageLabelTool:
         for label in LABELS:
             lines.append(f"  {label}: {counts[label]}")
         self.count_var.set("\n".join(lines))
+        
+        # Update chart tabs when counts change
+        self.update_chart_tabs()
 
     def update_progress_display(self):
         """Update the progress counter showing classified vs total images"""
