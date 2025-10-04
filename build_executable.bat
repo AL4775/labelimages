@@ -11,33 +11,31 @@ echo  Image Label Tool v6.0.0
 echo ========================================================
 echo.
 
-REM Vérifier si Python est installé
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo ERREUR: Python n'est pas installe ou pas dans le PATH
-    echo Veuillez installer Python 3.8+ depuis https://www.python.org
+REM Vérifier si l'environnement virtuel existe
+if not exist ".venv\Scripts\activate.bat" (
+    echo ERREUR: Environnement virtuel .venv non trouve
+    echo Veuillez d'abord executer setup.bat pour creer l'environnement
     pause
     exit /b 1
 )
 
-echo [1/5] Verification de Python... OK
+echo [1/5] Activation de l'environnement virtuel...
+call .venv\Scripts\activate.bat
+echo Environnement virtuel active... OK
 echo.
 
 REM Vérifier si PyInstaller est installé, sinon l'installer
 echo [2/5] Verification des dependances...
-pip show pyinstaller >nul 2>&1
+python -m pip show pyinstaller >nul 2>&1
 if errorlevel 1 (
     echo Installation de PyInstaller...
-    pip install pyinstaller
+    python -m pip install pyinstaller
     if errorlevel 1 (
         echo ERREUR: Impossible d'installer PyInstaller
         pause
         exit /b 1
     )
 )
-
-REM Installer les autres dépendances si nécessaire
-pip install pillow opencv-python-headless numpy
 echo Dependances... OK
 echo.
 
@@ -54,7 +52,7 @@ REM Construire l'exécutable avec PyInstaller
 echo [4/5] Construction de l'executable (ceci peut prendre plusieurs minutes)...
 echo.
 
-pyinstaller ^
+python -m PyInstaller ^
   --onefile ^
   --windowed ^
   --name=ImageLabelTool ^
@@ -69,11 +67,10 @@ pyinstaller ^
   --hidden-import=tkinter ^
   --hidden-import=tkinter.filedialog ^
   --hidden-import=tkinter.messagebox ^
-  --hidden-import=matplotlib ^
-  --hidden-import=matplotlib.pyplot ^
-  --hidden-import=matplotlib.backends.backend_tkagg ^
-  --hidden-import=seaborn ^
-  --hidden-import=pandas ^
+  --hidden-import=tkinter.ttk ^
+  --exclude-module=matplotlib ^
+  --exclude-module=seaborn ^
+  --exclude-module=pandas ^
   --exclude-module=scipy ^
   --exclude-module=jupyter ^
   --exclude-module=IPython ^

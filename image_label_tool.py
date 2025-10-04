@@ -63,6 +63,17 @@ class ImageLabelTool:
         # Set up proper cleanup when window is closed
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
+        # Chart update control (REMOVED - charts disabled)
+        # self.chart_update_pending = False
+        # self.charts_created = False
+        
+        # Chart figure references (REMOVED - charts disabled) 
+        # self.histogram_figure = None
+        # self.histogram_canvas = None
+        # self.pie_figure = None
+        # self.pie_canvas = None
+        # self._last_chart_data = None
+        
         self.setup_ui()
 
     def setup_logging(self):
@@ -124,7 +135,7 @@ class ImageLabelTool:
         # Folder path display
         self.folder_path_var = tk.StringVar(value="No folder selected")
         self.folder_path_label = tk.Label(top_frame, textvariable=self.folder_path_var, 
-                                         bg="#FAFAFA", font=("Arial", 11), fg="#666666",
+                                         bg="#FAFAFA", font=("Arial", 9), fg="#666666",
                                          wraplength=600, justify=tk.LEFT, anchor="w")
         self.folder_path_label.pack(side=tk.LEFT, padx=(10, 0), fill=tk.X, expand=True)
         
@@ -402,48 +413,6 @@ class ImageLabelTool:
                                          justify=tk.LEFT, anchor="w")
         self.parcel_stats_label.pack(pady=(3, 0), fill=tk.X)
 
-        # === TAB 3: Charts (if matplotlib available) ===
-        if HAS_MATPLOTLIB:
-            # Charts tab - Image Distribution
-            charts_tab1 = tk.Frame(stats_notebook, bg="#FAFAFA")
-            stats_notebook.add(charts_tab1, text="Charts")
-            
-            # Create scrollable frame for charts
-            charts_canvas = tk.Canvas(charts_tab1, bg="#FAFAFA")
-            charts_scrollbar = ttk.Scrollbar(charts_tab1, orient="vertical", command=charts_canvas.yview)
-            self.charts_scrollable_frame = tk.Frame(charts_canvas, bg="#FAFAFA")
-            
-            self.charts_scrollable_frame.bind(
-                "<Configure>",
-                lambda e: charts_canvas.configure(scrollregion=charts_canvas.bbox("all"))
-            )
-            
-            charts_canvas.create_window((0, 0), window=self.charts_scrollable_frame, anchor="nw")
-            charts_canvas.configure(yscrollcommand=charts_scrollbar.set)
-            
-            charts_canvas.pack(side="left", fill="both", expand=True)
-            charts_scrollbar.pack(side="right", fill="y")
-            
-            # Parcel Charts tab
-            charts_tab2 = tk.Frame(stats_notebook, bg="#FAFAFA")
-            stats_notebook.add(charts_tab2, text="Parcel Charts")
-            
-            # Create scrollable frame for parcel charts
-            parcel_canvas = tk.Canvas(charts_tab2, bg="#FAFAFA")
-            parcel_scrollbar = ttk.Scrollbar(charts_tab2, orient="vertical", command=parcel_canvas.yview)
-            self.parcel_charts_scrollable_frame = tk.Frame(parcel_canvas, bg="#FAFAFA")
-            
-            self.parcel_charts_scrollable_frame.bind(
-                "<Configure>",
-                lambda e: parcel_canvas.configure(scrollregion=parcel_canvas.bbox("all"))
-            )
-            
-            parcel_canvas.create_window((0, 0), window=self.parcel_charts_scrollable_frame, anchor="nw")
-            parcel_canvas.configure(yscrollcommand=parcel_scrollbar.set)
-            
-            parcel_canvas.pack(side="left", fill="both", expand=True)
-            parcel_scrollbar.pack(side="right", fill="y")
-
         # Auto monitoring section content (now in Progress tab)
         tk.Label(auto_detect_section, text="Auto Monitor New Files", bg="#FFF3E0", font=("Arial", 12, "bold"), fg="#F57C00").pack()
         
@@ -595,9 +564,6 @@ class ImageLabelTool:
         self.load_csv()  # Try to load existing CSV if any
         self.auto_detect_total_groups()  # Auto-detect total number of parcels from filenames
         self.apply_filter()  # Apply current filter to show appropriate images
-        
-        # Update chart tabs with new data
-        self.update_chart_tabs()
 
     def show_image(self):
         if not self.image_paths:
@@ -1232,37 +1198,15 @@ class ImageLabelTool:
         return stats
 
     def update_chart_tabs(self):
-        """Update the chart tabs with current data"""
-        if not HAS_MATPLOTLIB:
-            return
-            
-        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
-            return
-            
-        # Clear existing charts
-        if hasattr(self, 'charts_scrollable_frame'):
-            for widget in self.charts_scrollable_frame.winfo_children():
-                widget.destroy()
-                
-        if hasattr(self, 'parcel_charts_scrollable_frame'):
-            for widget in self.parcel_charts_scrollable_frame.winfo_children():
-                widget.destroy()
-        
-        # Use after_idle to ensure frames are properly sized before creating charts
-        def create_charts():
-            # Create image distribution histogram in first chart tab
-            if hasattr(self, 'charts_scrollable_frame'):
-                self.create_image_histogram(self.charts_scrollable_frame)
-                
-            # Create parcel pie chart in second chart tab  
-            if hasattr(self, 'parcel_charts_scrollable_frame'):
-                self.create_parcel_pie_chart(self.parcel_charts_scrollable_frame)
-        
-        # Schedule chart creation after the UI has updated
-        self.root.after_idle(create_charts)
+        """REMOVED: Charts functionality disabled"""
+        pass
 
     def show_statistics_charts(self):
         """Display fancy histogram and pie charts for statistics visualization"""
+        # DISABLED: This method is now replaced by integrated chart tabs
+        print("show_statistics_charts called but disabled - using integrated tabs instead")
+        return
+        
         if not HAS_MATPLOTLIB:
             messagebox.showwarning("Charts Unavailable", 
                                  "Chart functionality is not available.\n"
@@ -1304,6 +1248,131 @@ class ImageLabelTool:
         charts_window.transient(self.root)
         charts_window.grab_set()
 
+    def _resize_existing_charts(self):
+        """Resize existing matplotlib figures to fit current frame dimensions"""
+        try:
+            # Resize histogram chart
+            if (hasattr(self, 'histogram_figure') and self.histogram_figure and 
+                hasattr(self, 'histogram_canvas') and self.histogram_canvas and
+                hasattr(self, 'charts_scrollable_frame')):
+                
+                # Check if the canvas widget still exists
+                try:
+                    canvas_widget = self.histogram_canvas.get_tk_widget()
+                    if canvas_widget.winfo_exists():
+                        # Get new dimensions for histogram
+                        self.charts_scrollable_frame.update_idletasks()
+                        frame_width = self.charts_scrollable_frame.winfo_width()
+                        frame_height = self.charts_scrollable_frame.winfo_height()
+                        
+                        if frame_width > 1 and frame_height > 1:
+                            fig_width = max(4, (frame_width - 80) / 100)
+                            fig_height = max(3, (frame_height - 100) / 100)
+                            fig_width = min(fig_width, 15)
+                            fig_height = min(fig_height, 10)
+                            
+                            print(f"Resizing histogram to {fig_width:.1f}x{fig_height:.1f}")
+                            self.histogram_figure.set_size_inches(fig_width, fig_height)
+                            self.histogram_canvas.draw()
+                    else:
+                        print("Histogram canvas widget no longer exists, resetting references")
+                        self.histogram_figure = None
+                        self.histogram_canvas = None
+                except tk.TclError:
+                    print("Histogram canvas widget destroyed, resetting references")
+                    self.histogram_figure = None
+                    self.histogram_canvas = None
+            
+            # Resize pie chart
+            if (hasattr(self, 'pie_figure') and self.pie_figure and 
+                hasattr(self, 'pie_canvas') and self.pie_canvas and
+                hasattr(self, 'parcel_charts_scrollable_frame')):
+                
+                # Check if the canvas widget still exists
+                try:
+                    canvas_widget = self.pie_canvas.get_tk_widget()
+                    if canvas_widget.winfo_exists():
+                        # Get new dimensions for pie chart
+                        self.parcel_charts_scrollable_frame.update_idletasks()
+                        frame_width = self.parcel_charts_scrollable_frame.winfo_width()
+                        frame_height = self.parcel_charts_scrollable_frame.winfo_height()
+                        
+                        if frame_width > 1 and frame_height > 1:
+                            fig_width = max(4, (frame_width - 80) / 100)
+                            fig_height = max(6, (frame_height - 120) / 100)
+                            fig_width = min(fig_width, 15)
+                            fig_height = min(fig_height, 12)
+                            
+                            print(f"Resizing pie chart to {fig_width:.1f}x{fig_height:.1f}")
+                            self.pie_figure.set_size_inches(fig_width, fig_height)
+                            self.pie_canvas.draw()
+                    else:
+                        print("Pie canvas widget no longer exists, resetting references")
+                        self.pie_figure = None
+                        self.pie_canvas = None
+                except tk.TclError:
+                    print("Pie canvas widget destroyed, resetting references")
+                    self.pie_figure = None
+                    self.pie_canvas = None
+                    
+        except Exception as e:
+            print(f"Error resizing charts: {e}")
+
+    def _get_chart_data_hash(self):
+        """Generate a hash of current chart data to detect changes"""
+        try:
+            # Collect current data
+            image_counts = {label: 0 for label in LABELS}
+            if hasattr(self, 'all_image_paths') and self.all_image_paths:
+                for path in self.all_image_paths:
+                    if path in self.labels and self.labels[path] != "(Unclassified)":
+                        label = self.labels[path]
+                        if label in image_counts:
+                            image_counts[label] += 1
+                    else:
+                        image_counts["(Unclassified)"] += 1
+            
+            # Create simple hash of the data
+            data_str = str(sorted(image_counts.items()))
+            return hash(data_str)
+        except:
+            return None
+
+    def _clear_chart_references(self):
+        """Clear all chart references and close matplotlib figures"""
+        try:
+            if hasattr(self, 'histogram_figure') and self.histogram_figure:
+                print(f"Closing histogram figure: {self.histogram_figure}")
+                plt.close(self.histogram_figure)
+            if hasattr(self, 'pie_figure') and self.pie_figure:
+                print(f"Closing pie figure: {self.pie_figure}")
+                plt.close(self.pie_figure)
+        except Exception as e:
+            print(f"Error closing figures: {e}")
+        
+        # Also close any orphaned figures
+        try:
+            plt.close('all')  # Close all matplotlib figures
+            print("Closed all matplotlib figures")
+        except Exception as e:
+            print(f"Error closing all figures: {e}")
+        
+        self.histogram_figure = None
+        self.histogram_canvas = None
+        self.pie_figure = None
+        self.pie_canvas = None
+        print("Reset all chart references to None")
+
+    def force_chart_resize(self):
+        """Force resize of charts (called by button)"""
+        print("Forcing chart resize...")
+        if (hasattr(self, 'histogram_figure') and self.histogram_figure and 
+            hasattr(self, 'pie_figure') and self.pie_figure):
+            self._resize_existing_charts()
+        else:
+            # If charts don't exist, create them
+            self.update_chart_tabs()
+
     def create_image_histogram(self, parent_frame):
         """Create a fancy histogram showing image classification distribution"""
         # Set up matplotlib style
@@ -1332,19 +1401,44 @@ class ImageLabelTool:
         
         # Calculate optimal figure size based on parent frame dimensions
         parent_frame.update_idletasks()  # Ensure geometry is calculated
+        
+        # Force multiple updates to ensure proper sizing
+        for _ in range(3):
+            parent_frame.update()
+            parent_frame.update_idletasks()
+        
+        # Get frame dimensions with multiple attempts if needed
         frame_width = parent_frame.winfo_width()
         frame_height = parent_frame.winfo_height()
+        print(f"Frame dimensions after updates: {frame_width}x{frame_height}")
+        
+        # If dimensions are still not valid, wait a bit and try again
+        if frame_width <= 1 or frame_height <= 1:
+            print("Dimensions still invalid, waiting and retrying...")
+            parent_frame.after(100, lambda: parent_frame.update())
+            parent_frame.update()
+            frame_width = parent_frame.winfo_width()
+            frame_height = parent_frame.winfo_height()
+            print(f"Frame dimensions after wait: {frame_width}x{frame_height}")
         
         # Convert pixels to inches (assuming 100 DPI) with some padding
-        if frame_width > 1 and frame_height > 1:  # Valid dimensions
-            fig_width = max(4, (frame_width - 50) / 100)  # Min 4 inches, padding 50px
-            fig_height = max(3, (frame_height - 50) / 100)  # Min 3 inches, padding 50px
+        if frame_width > 50 and frame_height > 50:  # Need reasonable minimum
+            fig_width = max(4, (frame_width - 80) / 100)  # Min 4 inches, more padding
+            fig_height = max(3, (frame_height - 100) / 100)  # Min 3 inches, more padding
+            print(f"Calculated figure size: {fig_width:.1f}x{fig_height:.1f} inches")
         else:
-            # Fallback dimensions if frame not yet sized
+            # Fallback dimensions if frame still not properly sized
             fig_width, fig_height = 6, 4
+            print(f"Warning: Using fallback dimensions for chart. Frame size: {frame_width}x{frame_height}")
         
-        # Create the figure and axis - responsive size
-        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+        # Ensure reasonable size limits
+        fig_width = min(fig_width, 15)  # Max 15 inches wide
+        fig_height = min(fig_height, 10)  # Max 10 inches tall
+        
+        # Create the figure and axis - responsive size with unique identifier
+        import time
+        fig_id = f"histogram_{int(time.time() * 1000)}"  # Unique ID based on timestamp
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height), num=fig_id)
         
         # Create bars with custom styling
         bars = ax.bar(range(len(labels)), counts, color=colors[:len(labels)], 
@@ -1376,10 +1470,27 @@ class ImageLabelTool:
         # Improve layout
         plt.tight_layout()
         
-        # Embed the plot in tkinter
+        # Clear any existing widgets in the parent frame before adding new canvas
+        print(f"Clearing {len(parent_frame.winfo_children())} existing widgets from histogram frame")
+        for widget in list(parent_frame.winfo_children()):
+            try:
+                print(f"  Destroying histogram widget: {widget}")
+                widget.destroy()
+            except Exception as e:
+                print(f"  Error destroying histogram widget: {e}")
+        
+        # Force update to ensure widgets are really gone
+        parent_frame.update()
+        
+        # Embed the plot in tkinter and store references
         canvas = FigureCanvasTkAgg(fig, master=parent_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Store references for dynamic resizing
+        self.histogram_figure = fig
+        self.histogram_canvas = canvas
+        print(f"Histogram canvas created with ID: {canvas}")  # Debug
 
     def create_parcel_pie_chart(self, parent_frame):
         """Create a fancy pie chart showing parcel classification distribution"""
@@ -1413,19 +1524,44 @@ class ImageLabelTool:
         
         # Calculate optimal figure size based on parent frame dimensions
         parent_frame.update_idletasks()  # Ensure geometry is calculated
+        
+        # Force multiple updates to ensure proper sizing
+        for _ in range(3):
+            parent_frame.update()
+            parent_frame.update_idletasks()
+        
+        # Get frame dimensions with multiple attempts if needed
         frame_width = parent_frame.winfo_width()
         frame_height = parent_frame.winfo_height()
+        print(f"Pie chart frame dimensions after updates: {frame_width}x{frame_height}")
+        
+        # If dimensions are still not valid, wait a bit and try again
+        if frame_width <= 1 or frame_height <= 1:
+            print("Pie chart dimensions still invalid, waiting and retrying...")
+            parent_frame.after(100, lambda: parent_frame.update())
+            parent_frame.update()
+            frame_width = parent_frame.winfo_width()
+            frame_height = parent_frame.winfo_height()
+            print(f"Pie chart frame dimensions after wait: {frame_width}x{frame_height}")
         
         # Convert pixels to inches (assuming 100 DPI) with some padding
-        if frame_width > 1 and frame_height > 1:  # Valid dimensions
-            fig_width = max(4, (frame_width - 50) / 100)  # Min 4 inches, padding 50px
-            fig_height = max(6, (frame_height - 100) / 100)  # Min 6 inches for vertical layout
+        if frame_width > 50 and frame_height > 50:  # Need reasonable minimum
+            fig_width = max(4, (frame_width - 80) / 100)  # Min 4 inches, more padding
+            fig_height = max(6, (frame_height - 120) / 100)  # Min 6 inches for vertical layout
+            print(f"Calculated pie chart figure size: {fig_width:.1f}x{fig_height:.1f} inches")
         else:
-            # Fallback dimensions if frame not yet sized
+            # Fallback dimensions if frame still not properly sized
             fig_width, fig_height = 6, 8
+            print(f"Warning: Using fallback dimensions for parcel chart. Frame size: {frame_width}x{frame_height}")
+        
+        # Ensure reasonable size limits
+        fig_width = min(fig_width, 15)  # Max 15 inches wide
+        fig_height = min(fig_height, 12)  # Max 12 inches tall
         
         # Create the figure with vertical layout - pie chart above, table below
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(fig_width, fig_height), gridspec_kw={'height_ratios': [2, 1]})
+        fig_id = f"pie_chart_{int(time.time() * 1000)}"  # Unique ID based on timestamp
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(fig_width, fig_height), 
+                                      gridspec_kw={'height_ratios': [2, 1]}, num=fig_id)
         
         # Calculate responsive font sizes
         title_size = max(10, min(14, fig_width * 2))
@@ -1489,10 +1625,27 @@ class ImageLabelTool:
         
         plt.tight_layout(pad=2.0)
         
-        # Embed the plot in tkinter
+        # Clear any existing widgets in the parent frame before adding new canvas
+        print(f"Clearing {len(parent_frame.winfo_children())} existing widgets from pie chart frame")
+        for widget in list(parent_frame.winfo_children()):
+            try:
+                print(f"  Destroying pie chart widget: {widget}")
+                widget.destroy()
+            except Exception as e:
+                print(f"  Error destroying pie chart widget: {e}")
+        
+        # Force update to ensure widgets are really gone
+        parent_frame.update()
+        
+        # Embed the plot in tkinter and store references
         canvas = FigureCanvasTkAgg(fig, master=parent_frame)
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Store references for dynamic resizing
+        self.pie_figure = fig
+        self.pie_canvas = canvas
+        print(f"Pie chart canvas created with ID: {canvas}")  # Debug
 
     def create_progress_overview(self, parent_frame):
         """Create a comprehensive progress overview with multiple visualizations"""
@@ -1634,8 +1787,7 @@ class ImageLabelTool:
             lines.append(f"  {label}: {counts[label]}")
         self.count_var.set("\n".join(lines))
         
-        # Update chart tabs when counts change
-        self.update_chart_tabs()
+        # Charts removed - no longer updating charts
 
     def update_progress_display(self):
         """Update the progress counter showing classified vs total images"""
@@ -1874,9 +2026,47 @@ class ImageLabelTool:
     def on_window_resize(self, event):
         """Handle window resize events to update image display"""
         # Only respond to resize events from the main window
-        if event.widget == self.root and hasattr(self, 'image_paths') and self.image_paths:
-            # Use after_idle to ensure the window has finished resizing
-            self.root.after_idle(self.show_image)
+        if event.widget == self.root:
+            # Update image display if images are loaded
+            if hasattr(self, 'image_paths') and self.image_paths:
+                # Use after_idle to ensure the window has finished resizing
+                self.root.after_idle(self.show_image)
+
+    def _delayed_chart_update(self):
+        """REMOVED: Charts functionality disabled"""
+        pass
+
+    def update_chart_tabs(self):
+        """REMOVED: Charts functionality disabled"""
+        pass
+
+    def _resize_existing_charts(self):
+        """REMOVED: Charts functionality disabled"""
+        pass
+
+    def _get_chart_data_hash(self):
+        """REMOVED: Charts functionality disabled"""
+        return None
+
+    def _clear_chart_references(self):
+        """REMOVED: Charts functionality disabled"""
+        pass
+
+    def force_chart_resize(self):
+        """REMOVED: Charts functionality disabled"""
+        pass
+
+    def create_image_histogram(self, parent_frame):
+        """REMOVED: Charts functionality disabled"""
+        label = tk.Label(parent_frame, text="📊 Charts have been disabled\nfor better stability",
+                       font=("Arial", 14), bg="#FAFAFA", fg="#666666")
+        label.pack(expand=True)
+
+    def create_parcel_pie_chart(self, parent_frame):
+        """REMOVED: Charts functionality disabled"""
+        label = tk.Label(parent_frame, text="📊 Charts have been disabled\nfor better stability",
+                       font=("Arial", 14), bg="#FAFAFA", fg="#666666")
+        label.pack(expand=True)
 
     def toggle_1to1_scale(self):
         """Toggle between fitted view and 1:1 scale view"""
