@@ -1,7 +1,7 @@
 import os
 import csv
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageTk
 from datetime import datetime
 import re
@@ -16,12 +16,15 @@ import matplotlib.patches as patches
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import seaborn as sns
 
+# Application version
+VERSION = "1.0.1"
+
 LABELS = ["(Unclassified)", "no code", "read failure", "occluded", "image quality", "damaged", "other"]
 
 class ImageLabelTool:
     def __init__(self, root):
         self.root = root
-        self.root.title("Image Label Tool")
+        self.root.title(f"Image Label Tool v{VERSION}")
         self.root.configure(bg="#FAFAFA")  # Very light gray background
         self.root.minsize(800, 500)  # Ultra-compact minimum window size
         self.root.geometry("1000x600")  # Ultra-compact window size
@@ -107,17 +110,17 @@ class ImageLabelTool:
         # Folder path display
         self.folder_path_var = tk.StringVar(value="No folder selected")
         self.folder_path_label = tk.Label(top_frame, textvariable=self.folder_path_var, 
-                                         bg="#FAFAFA", font=("Arial", 9), fg="#666666",
+                                         bg="#FAFAFA", font=("Arial", 11), fg="#666666",
                                          wraplength=600, justify=tk.LEFT, anchor="w")
         self.folder_path_label.pack(side=tk.LEFT, padx=(10, 0), fill=tk.X, expand=True)
         
         # Total number of parcels input (right side)
         total_frame = tk.Frame(top_frame, bg="#FAFAFA")
         total_frame.pack(side=tk.RIGHT)
-        tk.Label(total_frame, text="Total number of parcels:", bg="#FAFAFA", font=("Arial", 9)).pack(side=tk.LEFT)
+        tk.Label(total_frame, text="Total number of parcels:", bg="#FAFAFA", font=("Arial", 11)).pack(side=tk.LEFT)
         self.total_parcels_var = tk.StringVar()
         self.total_parcels_entry = tk.Entry(total_frame, textvariable=self.total_parcels_var, width=8,
-                                          font=("Arial", 9), bg="white", relief="solid", bd=1)
+                                          font=("Arial", 11), bg="white", relief="solid", bd=1)
         self.total_parcels_entry.pack(side=tk.LEFT, padx=(5, 0))
         self.total_parcels_entry.bind('<KeyRelease>', self.on_total_changed)
         
@@ -138,39 +141,39 @@ class ImageLabelTool:
         # Scale info (compact display)
         self.scale_info_var = tk.StringVar()
         self.scale_info_label = tk.Label(toolbar_frame, textvariable=self.scale_info_var, 
-                                       bg="#E8E8E8", font=("Arial", 8), fg="#757575")
+                                       bg="#E8E8E8", font=("Arial", 10), fg="#757575")
         self.scale_info_label.pack(side=tk.LEFT, padx=(10, 15))
         
         # 1:1 Scale button
         self.btn_1to1 = tk.Button(toolbar_frame, text="1:1 Scale", command=self.toggle_1to1_scale,
-                                bg="#FFCC80", fg="white", font=("Arial", 8, "bold"),
+                                bg="#FFCC80", fg="white", font=("Arial", 10, "bold"),
                                 padx=8, pady=3, relief="flat")
         self.btn_1to1.pack(side=tk.LEFT, padx=(0, 10))
         
         # Zoom controls
-        tk.Label(toolbar_frame, text="Zoom:", bg="#E8E8E8", font=("Arial", 8)).pack(side=tk.LEFT, padx=(0, 5))
+        tk.Label(toolbar_frame, text="Zoom:", bg="#E8E8E8", font=("Arial", 10)).pack(side=tk.LEFT, padx=(0, 5))
         
         self.btn_zoom_out = tk.Button(toolbar_frame, text="−", command=self.zoom_out,
-                                    bg="#CE93D8", fg="white", font=("Arial", 10, "bold"),
+                                    bg="#CE93D8", fg="white", font=("Arial", 12, "bold"),
                                     padx=6, pady=2, relief="flat", width=2)
         self.btn_zoom_out.pack(side=tk.LEFT, padx=(0, 3))
         
         self.btn_zoom_in = tk.Button(toolbar_frame, text="+", command=self.zoom_in,
-                                   bg="#CE93D8", fg="white", font=("Arial", 10, "bold"),
+                                   bg="#CE93D8", fg="white", font=("Arial", 12, "bold"),
                                    padx=6, pady=2, relief="flat", width=2)
         self.btn_zoom_in.pack(side=tk.LEFT, padx=(0, 15))
 
         # Export button for current filter
         self.btn_gen_filter_folder = tk.Button(toolbar_frame, text="Gen Filter Folder", 
                                              command=self.generate_filter_folder,
-                                             bg="#9C27B0", fg="white", font=("Arial", 8, "bold"),
+                                             bg="#9C27B0", fg="white", font=("Arial", 10, "bold"),
                                              padx=8, pady=3, relief="flat")
         self.btn_gen_filter_folder.pack(side=tk.LEFT, padx=(0, 10))
 
         # Charts button for statistics visualization
         self.btn_show_charts = tk.Button(toolbar_frame, text="Show Charts", 
                                        command=self.show_statistics_charts,
-                                       bg="#FF5722", fg="white", font=("Arial", 8, "bold"),
+                                       bg="#FF5722", fg="white", font=("Arial", 10, "bold"),
                                        padx=8, pady=3, relief="flat")
         self.btn_show_charts.pack(side=tk.LEFT)
 
@@ -178,14 +181,18 @@ class ImageLabelTool:
         content_frame = tk.Frame(main_frame, bg="#FAFAFA")
         content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
-        # Center panel for image (now takes more space without left panel)
-        center_panel = tk.Frame(content_frame, bg="#FAFAFA")
-        center_panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 6))
+        # Configure content_frame grid weights for proportional layout
+        content_frame.grid_columnconfigure(0, weight=3)  # Image area: 60% of width
+        content_frame.grid_columnconfigure(1, weight=2)  # Stats area: 40% of width
+        content_frame.grid_rowconfigure(0, weight=1)
         
-        # Right panel for statistics - ultra-compact
-        right_panel = tk.Frame(content_frame, bg="#FAFAFA", width=200)  # Reduced from 250
-        right_panel.pack(side=tk.RIGHT, fill=tk.Y)
-        right_panel.pack_propagate(False)  # Maintain fixed width
+        # Center panel for image
+        center_panel = tk.Frame(content_frame, bg="#FAFAFA")
+        center_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        
+        # Right panel for statistics with tabbed interface
+        right_panel = tk.Frame(content_frame, bg="#FAFAFA")
+        right_panel.grid(row=0, column=1, sticky="nsew")
 
         # === CENTER PANEL: Image Display ===
         # Status indicator centered above image
@@ -226,13 +233,13 @@ class ImageLabelTool:
         # Add file status above label buttons - reduced spacing
         self.status_var = tk.StringVar()
         self.status = tk.Label(center_panel, textvariable=self.status_var, bg="#FAFAFA", 
-                             font=("Arial", 9), fg="#424242")  # Smaller font
+                             font=("Arial", 12), fg="#424242")  # Smaller font
         self.status.pack(pady=(5, 2))  # Reduced from (10, 5) to (5, 2)
         
         # Add parcel index display - reduced spacing
         self.parcel_index_var = tk.StringVar()
         self.parcel_index_label = tk.Label(center_panel, textvariable=self.parcel_index_var, bg="#FAFAFA",
-                                         font=("Arial", 9), fg="#424242")  # Smaller font
+                                         font=("Arial", 12), fg="#424242")  # Smaller font
         self.parcel_index_label.pack(pady=(0, 2))  # Reduced from (0, 5) to (0, 2)
 
         # Navigation and radio buttons for labels (below image) - compact spacing
@@ -242,22 +249,26 @@ class ImageLabelTool:
         nav_label_container = tk.Frame(center_panel, bg="#FAFAFA")
         nav_label_container.pack(pady=(0, 5))  # Reduced from 10 to 5
         
-        # Previous button (left side)
-        self.btn_prev = tk.Button(nav_label_container, text="<< Prev", command=self.prev_image,
-                                bg="#90CAF9", fg="white", font=("Arial", 8, "bold"),
-                                padx=8, pady=4, relief="flat")
-        self.btn_prev.pack(side=tk.LEFT, padx=(0, 15))
+        # Previous buttons (left side) - stacked vertically for consistency
+        prev_buttons_frame = tk.Frame(nav_label_container, bg="#FAFAFA")
+        prev_buttons_frame.pack(side=tk.LEFT, padx=(0, 15))
+        
+        # Previous button (top)
+        self.btn_prev = tk.Button(prev_buttons_frame, text="<< Prev", command=self.prev_image,
+                                bg="#90CAF9", fg="white", font=("Arial", 10, "bold"),
+                                padx=8, pady=3, relief="flat")
+        self.btn_prev.pack(pady=(0, 2))  # Small gap between buttons
+        
+        # First Image button (bottom)
+        self.btn_first = tk.Button(prev_buttons_frame, text="First Image", 
+                                  command=self.go_to_first_image,
+                                  bg="#FF9800", fg="white", font=("Arial", 9, "bold"),  # Smaller font
+                                  padx=6, pady=2, relief="flat")  # Smaller padding
+        self.btn_first.pack()
         
         # Label frame (center)
         label_frame = tk.Frame(nav_label_container, bg="#FAFAFA", relief="solid", bd=1, padx=10, pady=6)  # Reduced padding
         label_frame.pack(side=tk.LEFT)
-        
-        tk.Label(label_frame, text="Label:", bg="#FAFAFA", font=("Arial", 9, "bold")).pack(pady=(0, 3))  # Smaller font and padding
-        
-        # Add keyboard shortcut help - more compact
-        help_text = tk.Label(label_frame, text="Shortcuts: Q,W,E,R,T,Y | O,P Navigate", 
-                           bg="#FAFAFA", font=("Arial", 7), fg="#757575")  # Smaller font and shorter text
-        help_text.pack(pady=(0, 3))  # Reduced padding
         
         radio_container = tk.Frame(label_frame, bg="#FAFAFA")
         radio_container.pack()
@@ -300,7 +311,7 @@ class ImageLabelTool:
             
             rb = tk.Radiobutton(radio_container, text=display_text, variable=self.label_var, 
                               value=label, command=self.set_label_radio,
-                              bg=label_colors[label], font=("Arial", 7, "bold"),
+                              bg=label_colors[label], font=("Arial", 11, "bold"),
                               selectcolor="white", padx=2, pady=1, 
                               justify=tk.CENTER)  # Center-align multi-line text
             rb.grid(row=0, column=i, padx=1, pady=1, sticky="ew")  # Single row layout
@@ -312,80 +323,96 @@ class ImageLabelTool:
         
         # Next button (top)
         self.btn_next = tk.Button(nav_buttons_frame, text="Next >>", command=self.next_image,
-                                bg="#90CAF9", fg="white", font=("Arial", 8, "bold"),
+                                bg="#90CAF9", fg="white", font=("Arial", 10, "bold"),
                                 padx=8, pady=3, relief="flat")
         self.btn_next.pack(pady=(0, 2))  # Small gap between buttons
         
-        # Jump to Next Unclassified button (bottom)
-        self.btn_jump_unclassified = tk.Button(nav_buttons_frame, text="Jump to Next Unclassified", 
+        # Next Unclassified button (bottom)
+        self.btn_jump_unclassified = tk.Button(nav_buttons_frame, text="Next Unclass", 
                                               command=self.jump_to_next_unclassified,
-                                              bg="#FF9800", fg="white", font=("Arial", 7, "bold"),  # Smaller font
+                                              bg="#FF9800", fg="white", font=("Arial", 9, "bold"),  # Smaller font
                                               padx=6, pady=2, relief="flat")  # Smaller padding
         self.btn_jump_unclassified.pack()
 
-        # === RIGHT PANEL: Statistics ===
-        tk.Label(right_panel, text="Statistics", bg="#FAFAFA", font=("Arial", 9, "bold"), fg="#424242").pack(pady=(0, 6))
+        # === RIGHT PANEL: Statistics with Tabs ===
+        # Create tabbed notebook for statistics
+        stats_notebook = ttk.Notebook(right_panel)
+        stats_notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # === TAB 1: Progress & Counts ===
+        progress_tab = tk.Frame(stats_notebook, bg="#FAFAFA")
+        stats_notebook.add(progress_tab, text="Progress")
         
         # Progress section
-        progress_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
+        progress_section = tk.Frame(progress_tab, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
         progress_section.pack(fill=tk.X, pady=(0, 6))
         
-        tk.Label(progress_section, text="Progress", bg="#F5F5F5", font=("Arial", 9, "bold"), fg="#5E88D8").pack()
+        tk.Label(progress_section, text="Progress", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#5E88D8").pack()
         self.progress_var = tk.StringVar()
         self.progress_label = tk.Label(progress_section, textvariable=self.progress_var, bg="#F5F5F5",
-                                     font=("Arial", 8), fg="#424242", wraplength=200)
-        self.progress_label.pack(pady=(3, 0))
+                                     font=("Arial", 13), fg="#424242", wraplength=200, 
+                                     justify=tk.LEFT, anchor="w")
+        self.progress_label.pack(pady=(0, 0), fill=tk.X)
         
         # Image counts section
-        counts_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
+        counts_section = tk.Frame(progress_tab, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
         counts_section.pack(fill=tk.X, pady=(0, 6))
         
-        tk.Label(counts_section, text="Image Counts", bg="#F5F5F5", font=("Arial", 9, "bold"), fg="#81C784").pack()
+        tk.Label(counts_section, text="Image Counts", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#81C784").pack()
         self.count_var = tk.StringVar()
         self.count_label = tk.Label(counts_section, textvariable=self.count_var, bg="#F5F5F5",
-                                  font=("Arial", 8), fg="#424242", wraplength=200)
-        self.count_label.pack(pady=(3, 0))
+                                  font=("Arial", 13), fg="#424242", wraplength=200,
+                                  justify=tk.LEFT, anchor="w")
+        self.count_label.pack(pady=(3, 0), fill=tk.X)
+        
+        # Auto monitoring section (moved from Monitor tab)
+        auto_detect_section = tk.Frame(progress_tab, bg="#FFF3E0", relief="solid", bd=1, padx=6, pady=6)
+        auto_detect_section.pack(fill=tk.X, pady=(0, 6))
+        
+        # === TAB 2: Analysis ===
+        analysis_tab = tk.Frame(stats_notebook, bg="#FAFAFA")
+        stats_notebook.add(analysis_tab, text="Analysis")
         
         # Parcel statistics section
-        parcel_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
+        parcel_section = tk.Frame(analysis_tab, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
         parcel_section.pack(fill=tk.X, pady=(0, 6))
         
-        tk.Label(parcel_section, text="Parcel count", bg="#F5F5F5", font=("Arial", 9, "bold"), fg="#81C784").pack()
+        tk.Label(parcel_section, text="Parcel count", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#81C784").pack()
         self.parcel_count_var = tk.StringVar()
         self.parcel_count_label = tk.Label(parcel_section, textvariable=self.parcel_count_var, 
-                                         font=("Arial", 8), bg="#F5F5F5", fg="#424242", wraplength=200)
-        self.parcel_count_label.pack(pady=(3, 0))
+                                         font=("Arial", 13), bg="#F5F5F5", fg="#424242", wraplength=200,
+                                         justify=tk.LEFT, anchor="w")
+        self.parcel_count_label.pack(pady=(3, 0), fill=tk.X)
         
         # Total statistics section
-        total_section = tk.Frame(right_panel, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
+        total_section = tk.Frame(analysis_tab, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
         total_section.pack(fill=tk.X, pady=(0, 6))
         
-        tk.Label(total_section, text="Net Stats", bg="#F5F5F5", font=("Arial", 9, "bold"), fg="#5E88D8").pack()
+        tk.Label(total_section, text="Net Stats", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#5E88D8").pack()
         self.parcel_stats_var = tk.StringVar()
         self.parcel_stats_label = tk.Label(total_section, textvariable=self.parcel_stats_var, 
-                                         font=("Arial", 8), fg="#424242", bg="#F5F5F5", wraplength=200)
-        self.parcel_stats_label.pack(pady=(3, 0))
+                                         font=("Arial", 13), fg="#424242", bg="#F5F5F5", wraplength=200,
+                                         justify=tk.LEFT, anchor="w")
+        self.parcel_stats_label.pack(pady=(3, 0), fill=tk.X)
 
-        # Auto monitoring section (with checkbox hidden)
-        auto_detect_section = tk.Frame(right_panel, bg="#FFF3E0", relief="solid", bd=1, padx=6, pady=6)
-        auto_detect_section.pack(fill=tk.X, pady=(0, 6))  # RESTORED: Show the monitoring section
-        
-        tk.Label(auto_detect_section, text="Auto Monitor New Files", bg="#FFF3E0", font=("Arial", 10, "bold"), fg="#F57C00").pack()
+        # Auto monitoring section content (now in Progress tab)
+        tk.Label(auto_detect_section, text="Auto Monitor New Files", bg="#FFF3E0", font=("Arial", 12, "bold"), fg="#F57C00").pack()
         
         # Checkbox for auto barcode detection on new files (HIDDEN)
         self.auto_detect_enabled = tk.BooleanVar(value=False)
         self.auto_detect_checkbox = tk.Checkbutton(auto_detect_section, 
                                                  text="Auto detect barcodes on new files",
                                                  variable=self.auto_detect_enabled,
-                                                 bg="#FFF3E0", font=("Arial", 9),
+                                                 bg="#FFF3E0", font=("Arial", 12),
                                                  anchor="w", justify="left")
         # self.auto_detect_checkbox.pack(pady=(10, 5), fill=tk.X)  # HIDDEN: Comment out the pack() call
         
         # Progress indicator for auto classification
         self.auto_detect_progress_var = tk.StringVar()
         self.auto_detect_progress_label = tk.Label(auto_detect_section, textvariable=self.auto_detect_progress_var,
-                                                 bg="#FFF3E0", font=("Arial", 9), fg="#424242", wraplength=220)
-        self.auto_detect_progress_label.pack()
+                                                 bg="#FFF3E0", font=("Arial", 13), fg="#424242", wraplength=220,
+                                                 justify=tk.LEFT, anchor="w")
+        self.auto_detect_progress_label.pack(fill=tk.X)
         
         # Auto-timer controls
         timer_frame = tk.Frame(auto_detect_section, bg="#FFF3E0")
@@ -394,11 +421,11 @@ class ImageLabelTool:
         self.auto_timer_enabled = tk.BooleanVar()
         self.auto_timer_button = tk.Button(timer_frame, text="Start", 
                                           command=self.toggle_auto_timer,
-                                          bg="#4CAF50", fg="white", font=("Arial", 9, "bold"),
+                                          bg="#4CAF50", fg="white", font=("Arial", 11, "bold"),
                                           activebackground="#45a049", width=6)
         self.auto_timer_button.pack(side=tk.LEFT, padx=(0, 5))
         
-        tk.Label(timer_frame, text="every", bg="#FFF3E0", font=("Arial", 9)).pack(side=tk.LEFT, padx=(0, 5))
+        tk.Label(timer_frame, text="every", bg="#FFF3E0", font=("Arial", 12)).pack(side=tk.LEFT, padx=(0, 5))
         
         self.auto_timer_interval = tk.StringVar(value="10")
         
@@ -406,17 +433,18 @@ class ImageLabelTool:
         vcmd = (self.root.register(self.validate_numeric_input), '%P')
         
         self.auto_timer_entry = tk.Entry(timer_frame, textvariable=self.auto_timer_interval,
-                                        width=5, font=("Arial", 9), justify="center",
+                                        width=5, font=("Arial", 12), justify="center",
                                         validate='key', validatecommand=vcmd)
         self.auto_timer_entry.pack(side=tk.LEFT, padx=(0, 2))
         
-        tk.Label(timer_frame, text="min", bg="#FFF3E0", font=("Arial", 9)).pack(side=tk.LEFT)
+        tk.Label(timer_frame, text="min", bg="#FFF3E0", font=("Arial", 12)).pack(side=tk.LEFT)
         
         # Auto-timer status
         self.auto_timer_status_var = tk.StringVar()
         self.auto_timer_status_label = tk.Label(auto_detect_section, textvariable=self.auto_timer_status_var,
-                                               bg="#FFF3E0", font=("Arial", 8), fg="#666666", wraplength=220)
-        self.auto_timer_status_label.pack(pady=(5, 0))
+                                               bg="#FFF3E0", font=("Arial", 11), fg="#666666", wraplength=220,
+                                               justify=tk.LEFT, anchor="w")
+        self.auto_timer_status_label.pack(pady=(5, 0), fill=tk.X)
         
         # Initialize timer variables
         self.auto_timer_job = None
@@ -446,6 +474,17 @@ class ImageLabelTool:
         self.root.bind('<KeyPress-O>', self.prev_image_shortcut)
         self.root.bind('<KeyPress-p>', self.next_image_shortcut)
         self.root.bind('<KeyPress-P>', self.next_image_shortcut)
+        
+        # Bind Home key for go to first image
+        self.root.bind('<Home>', self.go_to_first_image_shortcut)
+        
+        # Bind Shift+O for 1:1 scale
+        self.root.bind('<Shift-O>', self.scale_1to1_shortcut)
+        self.root.bind('<Shift-o>', self.scale_1to1_shortcut)
+        
+        # Bind Shift+W for fit-to-window
+        self.root.bind('<Shift-W>', self.fit_window_shortcut)
+        self.root.bind('<Shift-w>', self.fit_window_shortcut)
         
         # Set focus to root window to capture keyboard events
         self.root.focus_set()
@@ -587,6 +626,14 @@ class ImageLabelTool:
     def prev_image(self):
         if self.current_index > 0:
             self.current_index -= 1
+            # Reset to fit mode when navigating to new image
+            self.reset_to_fit_mode()
+            self.show_image()
+
+    def go_to_first_image(self):
+        """Jump to the first image in the list."""
+        if self.image_paths and self.current_index > 0:
+            self.current_index = 0
             # Reset to fit mode when navigating to new image
             self.reset_to_fit_mode()
             self.show_image()
@@ -802,6 +849,31 @@ class ImageLabelTool:
     def next_image_shortcut(self, event=None):
         """Keyboard shortcut: Right arrow for next image"""
         self.next_image()
+
+    def go_to_first_image_shortcut(self, event=None):
+        """Keyboard shortcut: Home key for go to first image"""
+        self.go_to_first_image()
+
+    def scale_1to1_shortcut(self, event=None):
+        """Keyboard shortcut: Shift+O for 1:1 scale (always force true 1:1)"""
+        # Always force to true 1:1 scale regardless of current state
+        self.scale_1to1 = True
+        self.btn_1to1.config(text="Fit to Window", bg="#A5D6A7")
+        self.zoom_level = 1.0  # Force reset zoom level to true 1:1
+        # Always refresh the current image display to apply true 1:1 scale
+        if hasattr(self, 'image_paths') and self.image_paths:
+            self.show_image()
+
+    def fit_window_shortcut(self, event=None):
+        """Keyboard shortcut: Shift+W for fit-to-window (always set to fit)"""
+        # Always set to fit mode regardless of current state
+        if self.scale_1to1:
+            self.scale_1to1 = False
+            self.zoom_level = 1.0
+            self.btn_1to1.config(text="1:1 Scale", bg="#FFCC80")
+            # Refresh the current image display
+            if hasattr(self, 'image_paths') and self.image_paths:
+                self.show_image()
 
     def on_total_changed(self, event=None):
         """Called when the total parcels field changes"""
@@ -1101,7 +1173,7 @@ class ImageLabelTool:
         
         # Create a new window for charts
         charts_window = tk.Toplevel(self.root)
-        charts_window.title("Statistics Charts - Image Label Tool")
+        charts_window.title(f"Statistics Charts - Image Label Tool v{VERSION}")
         charts_window.geometry("1200x800")
         charts_window.configure(bg="#FAFAFA")
         
@@ -1112,17 +1184,17 @@ class ImageLabelTool:
         
         # Tab 1: Image Classification Histogram
         hist_frame = ttk.Frame(notebook)
-        notebook.add(hist_frame, text="📊 Image Distribution")
+        notebook.add(hist_frame, text="Image Distribution")
         self.create_image_histogram(hist_frame)
         
         # Tab 2: Parcel Classification Pie Chart
         pie_frame = ttk.Frame(notebook)
-        notebook.add(pie_frame, text="🥧 Parcel Breakdown")
+        notebook.add(pie_frame, text="Parcel Breakdown")
         self.create_parcel_pie_chart(pie_frame)
         
         # Tab 3: Progress and Stats Overview
         overview_frame = ttk.Frame(notebook)
-        notebook.add(overview_frame, text="📈 Progress Overview")
+        notebook.add(overview_frame, text="Progress Overview")
         self.create_progress_overview(overview_frame)
         
         # Center the window
@@ -1163,7 +1235,7 @@ class ImageLabelTool:
                      alpha=0.8, edgecolor='white', linewidth=2)
         
         # Customize the plot
-        ax.set_title('📊 Image Classification Distribution', fontsize=16, fontweight='bold', pad=20)
+        ax.set_title('Image Classification Distribution', fontsize=16, fontweight='bold', pad=20)
         ax.set_xlabel('Classification Labels', fontsize=12, fontweight='bold')
         ax.set_ylabel('Number of Images', fontsize=12, fontweight='bold')
         
@@ -1229,7 +1301,7 @@ class ImageLabelTool:
                                           shadow=True, textprops={'fontsize': 10})
         
         # Beautify the pie chart
-        ax1.set_title('🥧 Parcel Classification Breakdown', fontsize=14, fontweight='bold', pad=20)
+        ax1.set_title('Parcel Classification Breakdown', fontsize=14, fontweight='bold', pad=20)
         
         # Make percentage text bold
         for autotext in autotexts:
@@ -1272,7 +1344,7 @@ class ImageLabelTool:
                     cell.set_text_props(weight='bold')
                     cell.set_facecolor('#E8F5E8')
         
-        ax2.set_title('📊 Detailed Breakdown', fontsize=12, fontweight='bold')
+        ax2.set_title('Detailed Breakdown', fontsize=12, fontweight='bold')
         
         plt.tight_layout()
         
@@ -1311,7 +1383,7 @@ class ImageLabelTool:
                 autotext.set_color('white')
                 autotext.set_fontweight('bold')
                 
-            ax1.set_title('📈 Classification Progress', fontweight='bold', fontsize=12)
+            ax1.set_title('Classification Progress', fontweight='bold', fontsize=12)
         
         # 2. Read Rate Bars (if total parcels is set)
         try:
@@ -1336,7 +1408,7 @@ class ImageLabelTool:
                 bars = ax2.bar(rate_labels, rates, color=rate_colors, alpha=0.8, edgecolor='white', linewidth=2)
                 ax2.set_ylim(0, 100)
                 ax2.set_ylabel('Percentage (%)', fontweight='bold')
-                ax2.set_title('📊 Read Rates', fontweight='bold', fontsize=12)
+                ax2.set_title('Read Rates', fontweight='bold', fontsize=12)
                 
                 # Add percentage labels on bars
                 for bar, rate in zip(bars, rates):
@@ -1383,7 +1455,7 @@ class ImageLabelTool:
             ax3.set_xticks(range(len(filtered_labels)))
             ax3.set_xticklabels(filtered_labels, rotation=45, ha='right')
             ax3.set_ylabel('Count', fontweight='bold')
-            ax3.set_title('📊 Complete Classification Overview', fontweight='bold', fontsize=14, pad=15)
+            ax3.set_title('Complete Classification Overview', fontweight='bold', fontsize=14, pad=15)
             
             # Add count labels on bars
             for bar, count in zip(bars, filtered_counts):
@@ -1416,7 +1488,7 @@ class ImageLabelTool:
                     counts["(Unclassified)"] += 1
         
         # Multi-line format for better readability
-        lines = ["Images:"]
+        lines = []
         for label in LABELS:
             lines.append(f"  {label}: {counts[label]}")
         self.count_var.set("\n".join(lines))
@@ -1432,16 +1504,16 @@ class ImageLabelTool:
         unclassified_images = total_images - classified_images
         
         # Multi-line format for better readability
-        progress_text = f"\n{classified_images}/{total_images} classified\n({unclassified_images} remaining)"
+        progress_text = f"{classified_images}/{total_images} classified\n({unclassified_images} remaining)"
         self.progress_var.set(progress_text)
         
-        # Change text color and weight based on remaining count
+        # Change text color based on remaining count (but keep consistent font size)
         if unclassified_images > 0:
             # Bold red text when there are remaining images
-            self.progress_label.config(fg="red", font=("Arial", 9, "bold"))
+            self.progress_label.config(fg="red", font=("Arial", 13, "bold"))
         else:
             # Normal green text when all images are classified
-            self.progress_label.config(fg="#2E7D32", font=("Arial", 9, "normal"))
+            self.progress_label.config(fg="#2E7D32", font=("Arial", 13, "normal"))
 
     def update_current_label_status(self):
         """Update the current image label status indicator"""
@@ -2508,6 +2580,7 @@ class ImageLabelTool:
         """Disable all UI controls except the Stop button during auto-classification"""
         # Disable navigation buttons
         self.btn_prev.config(state='disabled')
+        self.btn_first.config(state='disabled')
         self.btn_next.config(state='disabled')
         self.btn_jump_unclassified.config(state='disabled')
         
@@ -2541,6 +2614,7 @@ class ImageLabelTool:
         """Re-enable all UI controls after auto-classification completes"""
         # Enable navigation buttons
         self.btn_prev.config(state='normal')
+        self.btn_first.config(state='normal')
         self.btn_next.config(state='normal')
         self.btn_jump_unclassified.config(state='normal')
         
