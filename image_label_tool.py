@@ -1325,27 +1325,27 @@ class ImageLabelTool:
         # Define attractive colors for each category
         colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF']
         
-        # Create the figure and axis
-        fig, ax = plt.subplots(figsize=(10, 6))
+        # Create the figure and axis - smaller size for tab layout
+        fig, ax = plt.subplots(figsize=(6, 4))
         
         # Create bars with custom styling
         bars = ax.bar(range(len(labels)), counts, color=colors[:len(labels)], 
-                     alpha=0.8, edgecolor='white', linewidth=2)
+                     alpha=0.8, edgecolor='white', linewidth=1)
         
         # Customize the plot
-        ax.set_title('Image Classification Distribution', fontsize=16, fontweight='bold', pad=20)
-        ax.set_xlabel('Classification Labels', fontsize=12, fontweight='bold')
-        ax.set_ylabel('Number of Images', fontsize=12, fontweight='bold')
+        ax.set_title('Image Classification Distribution', fontsize=12, fontweight='bold', pad=15)
+        ax.set_xlabel('Classification Labels', fontsize=10, fontweight='bold')
+        ax.set_ylabel('Number of Images', fontsize=10, fontweight='bold')
         
         # Set x-axis labels with rotation
         ax.set_xticks(range(len(labels)))
-        ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=10)
+        ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
         
         # Add value labels on top of bars
         for i, (bar, count) in enumerate(zip(bars, counts)):
             if count > 0:
                 ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(counts)*0.01,
-                       str(count), ha='center', va='bottom', fontweight='bold', fontsize=10)
+                       str(count), ha='center', va='bottom', fontweight='bold', fontsize=9)
         
         # Add grid for better readability
         ax.grid(True, alpha=0.3, axis='y')
@@ -1389,24 +1389,25 @@ class ImageLabelTool:
         # Define attractive colors
         colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF']
         
-        # Create the figure
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+        # Create the figure with vertical layout - pie chart above, table below
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 8), gridspec_kw={'height_ratios': [2, 1]})
         
         # Create pie chart
         wedges, texts, autotexts = ax1.pie(sizes, labels=labels, colors=colors[:len(labels)],
                                           autopct='%1.1f%%', startangle=90, 
                                           explode=[0.05] * len(labels),
-                                          shadow=True, textprops={'fontsize': 10})
+                                          shadow=True, textprops={'fontsize': 9})
         
         # Beautify the pie chart
-        ax1.set_title('Parcel Classification Breakdown', fontsize=14, fontweight='bold', pad=20)
+        ax1.set_title('Parcel Classification Breakdown', fontsize=12, fontweight='bold', pad=15)
         
         # Make percentage text bold
         for autotext in autotexts:
             autotext.set_color('white')
             autotext.set_fontweight('bold')
+            autotext.set_fontsize(8)
         
-        # Create a detailed breakdown table
+        # Create a detailed breakdown table below the pie chart
         ax2.axis('tight')
         ax2.axis('off')
         
@@ -1427,8 +1428,8 @@ class ImageLabelTool:
                          colColours=['#E3F2FD', '#E3F2FD', '#E3F2FD'])
         
         table.auto_set_font_size(False)
-        table.set_fontsize(10)
-        table.scale(1, 2)
+        table.set_fontsize(8)
+        table.scale(1, 1.5)
         
         # Style the table
         for i in range(len(table_data) + 1):
@@ -1442,9 +1443,9 @@ class ImageLabelTool:
                     cell.set_text_props(weight='bold')
                     cell.set_facecolor('#E8F5E8')
         
-        ax2.set_title('Detailed Breakdown', fontsize=12, fontweight='bold')
+        ax2.set_title('Detailed Breakdown', fontsize=10, fontweight='bold')
         
-        plt.tight_layout()
+        plt.tight_layout(pad=2.0)
         
         # Embed the plot in tkinter
         canvas = FigureCanvasTkAgg(fig, master=parent_frame)
