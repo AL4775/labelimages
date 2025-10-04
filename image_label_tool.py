@@ -1248,13 +1248,18 @@ class ImageLabelTool:
             for widget in self.parcel_charts_scrollable_frame.winfo_children():
                 widget.destroy()
         
-        # Create image distribution histogram in first chart tab
-        if hasattr(self, 'charts_scrollable_frame'):
-            self.create_image_histogram(self.charts_scrollable_frame)
-            
-        # Create parcel pie chart in second chart tab  
-        if hasattr(self, 'parcel_charts_scrollable_frame'):
-            self.create_parcel_pie_chart(self.parcel_charts_scrollable_frame)
+        # Use after_idle to ensure frames are properly sized before creating charts
+        def create_charts():
+            # Create image distribution histogram in first chart tab
+            if hasattr(self, 'charts_scrollable_frame'):
+                self.create_image_histogram(self.charts_scrollable_frame)
+                
+            # Create parcel pie chart in second chart tab  
+            if hasattr(self, 'parcel_charts_scrollable_frame'):
+                self.create_parcel_pie_chart(self.parcel_charts_scrollable_frame)
+        
+        # Schedule chart creation after the UI has updated
+        self.root.after_idle(create_charts)
 
     def show_statistics_charts(self):
         """Display fancy histogram and pie charts for statistics visualization"""
@@ -1325,27 +1330,44 @@ class ImageLabelTool:
         # Define attractive colors for each category
         colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF']
         
-        # Create the figure and axis - smaller size for tab layout
-        fig, ax = plt.subplots(figsize=(6, 4))
+        # Calculate optimal figure size based on parent frame dimensions
+        parent_frame.update_idletasks()  # Ensure geometry is calculated
+        frame_width = parent_frame.winfo_width()
+        frame_height = parent_frame.winfo_height()
+        
+        # Convert pixels to inches (assuming 100 DPI) with some padding
+        if frame_width > 1 and frame_height > 1:  # Valid dimensions
+            fig_width = max(4, (frame_width - 50) / 100)  # Min 4 inches, padding 50px
+            fig_height = max(3, (frame_height - 50) / 100)  # Min 3 inches, padding 50px
+        else:
+            # Fallback dimensions if frame not yet sized
+            fig_width, fig_height = 6, 4
+        
+        # Create the figure and axis - responsive size
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
         
         # Create bars with custom styling
         bars = ax.bar(range(len(labels)), counts, color=colors[:len(labels)], 
                      alpha=0.8, edgecolor='white', linewidth=1)
         
-        # Customize the plot
-        ax.set_title('Image Classification Distribution', fontsize=12, fontweight='bold', pad=15)
-        ax.set_xlabel('Classification Labels', fontsize=10, fontweight='bold')
-        ax.set_ylabel('Number of Images', fontsize=10, fontweight='bold')
+        # Customize the plot with responsive font sizes
+        title_size = max(10, min(14, fig_width * 2))
+        label_size = max(8, min(12, fig_width * 1.5))
+        tick_size = max(7, min(10, fig_width * 1.2))
+        
+        ax.set_title('Image Classification Distribution', fontsize=title_size, fontweight='bold', pad=15)
+        ax.set_xlabel('Classification Labels', fontsize=label_size, fontweight='bold')
+        ax.set_ylabel('Number of Images', fontsize=label_size, fontweight='bold')
         
         # Set x-axis labels with rotation
         ax.set_xticks(range(len(labels)))
-        ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
+        ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=tick_size)
         
         # Add value labels on top of bars
         for i, (bar, count) in enumerate(zip(bars, counts)):
             if count > 0:
                 ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(counts)*0.01,
-                       str(count), ha='center', va='bottom', fontweight='bold', fontsize=9)
+                       str(count), ha='center', va='bottom', fontweight='bold', fontsize=tick_size)
         
         # Add grid for better readability
         ax.grid(True, alpha=0.3, axis='y')
@@ -1389,23 +1411,41 @@ class ImageLabelTool:
         # Define attractive colors
         colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF']
         
+        # Calculate optimal figure size based on parent frame dimensions
+        parent_frame.update_idletasks()  # Ensure geometry is calculated
+        frame_width = parent_frame.winfo_width()
+        frame_height = parent_frame.winfo_height()
+        
+        # Convert pixels to inches (assuming 100 DPI) with some padding
+        if frame_width > 1 and frame_height > 1:  # Valid dimensions
+            fig_width = max(4, (frame_width - 50) / 100)  # Min 4 inches, padding 50px
+            fig_height = max(6, (frame_height - 100) / 100)  # Min 6 inches for vertical layout
+        else:
+            # Fallback dimensions if frame not yet sized
+            fig_width, fig_height = 6, 8
+        
         # Create the figure with vertical layout - pie chart above, table below
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 8), gridspec_kw={'height_ratios': [2, 1]})
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(fig_width, fig_height), gridspec_kw={'height_ratios': [2, 1]})
+        
+        # Calculate responsive font sizes
+        title_size = max(10, min(14, fig_width * 2))
+        pie_label_size = max(8, min(11, fig_width * 1.5))
+        pie_text_size = max(7, min(9, fig_width * 1.3))
         
         # Create pie chart
         wedges, texts, autotexts = ax1.pie(sizes, labels=labels, colors=colors[:len(labels)],
                                           autopct='%1.1f%%', startangle=90, 
                                           explode=[0.05] * len(labels),
-                                          shadow=True, textprops={'fontsize': 9})
+                                          shadow=True, textprops={'fontsize': pie_label_size})
         
         # Beautify the pie chart
-        ax1.set_title('Parcel Classification Breakdown', fontsize=12, fontweight='bold', pad=15)
+        ax1.set_title('Parcel Classification Breakdown', fontsize=title_size, fontweight='bold', pad=15)
         
-        # Make percentage text bold
+        # Make percentage text bold with responsive sizing
         for autotext in autotexts:
             autotext.set_color('white')
             autotext.set_fontweight('bold')
-            autotext.set_fontsize(8)
+            autotext.set_fontsize(pie_text_size)
         
         # Create a detailed breakdown table below the pie chart
         ax2.axis('tight')
@@ -1428,8 +1468,9 @@ class ImageLabelTool:
                          colColours=['#E3F2FD', '#E3F2FD', '#E3F2FD'])
         
         table.auto_set_font_size(False)
-        table.set_fontsize(8)
-        table.scale(1, 1.5)
+        table_font_size = max(7, min(10, fig_width * 1.2))
+        table.set_fontsize(table_font_size)
+        table.scale(1, max(1.2, min(1.8, fig_height * 0.2)))
         
         # Style the table
         for i in range(len(table_data) + 1):
@@ -1443,7 +1484,8 @@ class ImageLabelTool:
                     cell.set_text_props(weight='bold')
                     cell.set_facecolor('#E8F5E8')
         
-        ax2.set_title('Detailed Breakdown', fontsize=10, fontweight='bold')
+        table_title_size = max(9, min(12, fig_width * 1.8))
+        ax2.set_title('Detailed Breakdown', fontsize=table_title_size, fontweight='bold')
         
         plt.tight_layout(pad=2.0)
         
