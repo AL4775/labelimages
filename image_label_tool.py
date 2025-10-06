@@ -32,7 +32,7 @@ FigureCanvasTkAgg = None
 sns = None
 
 # Application version
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 
 LABELS = ["(Unclassified)", "no code", "read failure", "occluded", "image quality", "damaged", "other"]
 
@@ -395,6 +395,14 @@ class ImageLabelTool:
         analysis_tab = tk.Frame(stats_notebook, bg="#FAFAFA")
         stats_notebook.add(analysis_tab, text="Analysis")
         
+        # Warning message for incomplete classification (in Analysis tab)
+        self.warning_message_label = tk.Label(analysis_tab, 
+                                            text="⚠️ Warning: still remaining images to classify. The statistics may be inaccurate.",
+                                            bg="#FAFAFA", fg="#FF0000", font=("Arial", 12, "bold"),
+                                            wraplength=250, justify=tk.LEFT)
+        self.warning_message_label.pack(pady=(5, 10), fill=tk.X)
+        self.warning_message_label.pack_forget()  # Initially hidden
+        
         # Parcel statistics section
         parcel_section = tk.Frame(analysis_tab, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
         parcel_section.pack(fill=tk.X, pady=(0, 6))
@@ -524,6 +532,62 @@ class ImageLabelTool:
         except ValueError:
             return False
 
+    def update_warning_message(self):
+        """Update the warning message in Analysis tab based on classification status"""
+        if not hasattr(self, 'warning_message_label'):
+            return
+            
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            self.warning_message_label.pack_forget()
+            return
+        
+        # Count unclassified images
+        unclassified_count = 0
+        for path in self.all_image_paths:
+            if path not in self.labels or self.labels[path] == "(Unclassified)":
+                unclassified_count += 1
+        
+        if unclassified_count > 0:
+            # Show warning message
+            self.warning_message_label.pack(pady=(5, 10), fill=tk.X)
+        else:
+            # Hide warning message
+            self.warning_message_label.pack_forget()
+
+    def update_navigation_buttons(self):
+        """Update the state of navigation buttons based on current position and available images"""
+        if not hasattr(self, 'image_paths') or not self.image_paths:
+            # No images loaded - disable all navigation buttons
+            if hasattr(self, 'btn_prev'):
+                self.btn_prev.config(state='disabled')
+            if hasattr(self, 'btn_next'):
+                self.btn_next.config(state='disabled')
+            if hasattr(self, 'btn_jump_unclassified'):
+                self.btn_jump_unclassified.config(state='disabled')
+            return
+        
+        # Update Prev button
+        if hasattr(self, 'btn_prev'):
+            if self.current_index <= 0:
+                self.btn_prev.config(state='disabled')
+            else:
+                self.btn_prev.config(state='normal')
+        
+        # Update Next button  
+        if hasattr(self, 'btn_next'):
+            if self.current_index >= len(self.image_paths) - 1:
+                self.btn_next.config(state='disabled')
+            else:
+                self.btn_next.config(state='normal')
+        
+        # Update Next Unclassified button - only enabled when filter is "All images"
+        if hasattr(self, 'btn_jump_unclassified'):
+            filter_is_all = self.filter_var.get() == "All images"
+            if not filter_is_all or not self.image_paths:
+                self.btn_jump_unclassified.config(state='disabled')
+            else:
+                self.btn_jump_unclassified.config(state='normal')
+
     def on_closing(self):
         """Handle application cleanup before closing"""
         # Cancel any running timer jobs to prevent errors
@@ -568,6 +632,10 @@ class ImageLabelTool:
         self.load_csv()  # Try to load existing CSV if any
         self.auto_detect_total_groups()  # Auto-detect total number of parcels from filenames
         self.apply_filter()  # Apply current filter to show appropriate images
+        
+        # Update warning message and navigation buttons
+        self.update_warning_message()
+        self.update_navigation_buttons()
 
     def show_image(self):
         if not self.image_paths:
@@ -658,6 +726,9 @@ class ImageLabelTool:
         self.update_progress_display()
         self.update_current_label_status()
         self.update_parcel_index_display()
+        
+        # Update navigation buttons
+        self.update_navigation_buttons()
 
     def prev_image(self):
         if self.current_index > 0:
@@ -972,6 +1043,9 @@ class ImageLabelTool:
         self.update_progress_display()
         if self.image_paths:  # Only update if there are images loaded
             self.update_parcel_index_display()
+        
+        # Update navigation buttons
+        self.update_navigation_buttons()
 
     def load_csv(self):
         # Reset parcel indices when loading
@@ -1792,6 +1866,9 @@ class ImageLabelTool:
         self.count_var.set("\n".join(lines))
         
         # Charts removed - no longer updating charts
+        
+        # Update warning message
+        self.update_warning_message()
 
     def update_progress_display(self):
         """Update the progress counter showing classified vs total images"""
