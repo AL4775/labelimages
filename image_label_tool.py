@@ -11,24 +11,28 @@ import time
 import cv2
 import numpy as np
 import logging
+import multiprocessing
 
-# Optional imports for charting functionality
+# Optional imports for charting functionality (DISABLED for stability)
 HAS_MATPLOTLIB = False
-try:
-    import matplotlib.pyplot as plt
-    import matplotlib.patches as patches
-    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-    import seaborn as sns
-    HAS_MATPLOTLIB = True
-except ImportError:
-    # Matplotlib not available - charting features will be disabled
-    plt = None
-    patches = None
-    FigureCanvasTkAgg = None
-    sns = None
+# Charting functionality disabled to prevent executable issues
+# try:
+#     import matplotlib.pyplot as plt
+#     import matplotlib.patches as patches
+#     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+#     import seaborn as sns
+#     HAS_MATPLOTLIB = True
+# except ImportError:
+#     pass
+
+# Set to None since charting is disabled
+plt = None
+patches = None
+FigureCanvasTkAgg = None
+sns = None
 
 # Application version
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 LABELS = ["(Unclassified)", "no code", "read failure", "occluded", "image quality", "damaged", "other"]
 
@@ -3038,12 +3042,25 @@ class ImageLabelTool:
         # Update status with completion info
         self.auto_timer_status_var.set(f"Auto-classification complete at {completion_time}\nProcessed {total_images} images")
 
-if __name__ == "__main__":
-    try:
-        from PIL import Image, ImageTk
-    except ImportError:
-        messagebox.showerror("Missing Dependency", "Please install Pillow: pip install pillow")
-        exit(1)
+def main():
+    """Main function to run the application."""
     root = tk.Tk()
     app = ImageLabelTool(root)
     root.mainloop()
+
+if __name__ == "__main__":
+    # Protection for PyInstaller executables to prevent infinite loops
+    multiprocessing.freeze_support()
+    
+    # Ensure PIL is available (already imported at top)
+    try:
+        # Test PIL import without re-importing
+        Image.new('RGB', (1, 1))
+    except Exception as e:
+        messagebox.showerror("Missing Dependency", 
+                           f"PIL/Pillow is not properly installed: {e}\n"
+                           "Please install Pillow: pip install pillow")
+        exit(1)
+    
+    # Run the main application
+    main()
