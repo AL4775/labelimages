@@ -32,7 +32,7 @@ FigureCanvasTkAgg = None
 sns = None
 
 # Application version
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 
 LABELS = ["(Unclassified)", "no code", "read failure", "occluded", "image quality", "damaged", "other"]
 
@@ -559,34 +559,34 @@ class ImageLabelTool:
         if not hasattr(self, 'image_paths') or not self.image_paths:
             # No images loaded - disable all navigation buttons
             if hasattr(self, 'btn_prev'):
-                self.btn_prev.config(state='disabled')
+                self.btn_prev.config(state='disabled', bg='#CCCCCC', fg='#666666')
             if hasattr(self, 'btn_next'):
-                self.btn_next.config(state='disabled')
+                self.btn_next.config(state='disabled', bg='#CCCCCC', fg='#666666')
             if hasattr(self, 'btn_jump_unclassified'):
-                self.btn_jump_unclassified.config(state='disabled')
+                self.btn_jump_unclassified.config(state='disabled', bg='#CCCCCC', fg='#666666')
             return
         
         # Update Prev button
         if hasattr(self, 'btn_prev'):
             if self.current_index <= 0:
-                self.btn_prev.config(state='disabled')
+                self.btn_prev.config(state='disabled', bg='#CCCCCC', fg='#666666')
             else:
-                self.btn_prev.config(state='normal')
+                self.btn_prev.config(state='normal', bg='#90CAF9', fg='black')
         
         # Update Next button  
         if hasattr(self, 'btn_next'):
             if self.current_index >= len(self.image_paths) - 1:
-                self.btn_next.config(state='disabled')
+                self.btn_next.config(state='disabled', bg='#CCCCCC', fg='#666666')
             else:
-                self.btn_next.config(state='normal')
+                self.btn_next.config(state='normal', bg='#90CAF9', fg='black')
         
         # Update Next Unclassified button - only enabled when filter is "All images"
         if hasattr(self, 'btn_jump_unclassified'):
             filter_is_all = self.filter_var.get() == "All images"
             if not filter_is_all or not self.image_paths:
-                self.btn_jump_unclassified.config(state='disabled')
+                self.btn_jump_unclassified.config(state='disabled', bg='#CCCCCC', fg='#666666')
             else:
-                self.btn_jump_unclassified.config(state='normal')
+                self.btn_jump_unclassified.config(state='normal', bg='#FF9800', fg='black')
 
     def on_closing(self):
         """Handle application cleanup before closing"""
@@ -782,6 +782,14 @@ class ImageLabelTool:
         self.labels[path] = value
         self.save_csv()
         self.update_counts()
+        
+        # Set image to fit-to-window mode after classification
+        if self.scale_1to1:
+            self.scale_1to1 = False
+            self.zoom_level = 1.0
+            self.btn_1to1.config(text="1:1 Scale", bg="#FFCC80")
+            # Refresh the current image display to apply fit-to-window
+            self.show_image()
 
     def set_label_radio(self):
         if not self.image_paths:
@@ -799,6 +807,12 @@ class ImageLabelTool:
         self.update_progress_display()
         self.update_current_label_status()
         self.update_parcel_index_display()
+        
+        # Set image to fit-to-window mode after classification
+        if self.scale_1to1:
+            self.scale_1to1 = False
+            self.zoom_level = 1.0
+            self.btn_1to1.config(text="1:1 Scale", bg="#FFCC80")
         
         # If filtering is active, reapply filter in case current image no longer matches
         if self.filter_var.get() != "All images":
