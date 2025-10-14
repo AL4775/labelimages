@@ -13,26 +13,22 @@ import numpy as np
 import logging
 import multiprocessing
 
-# Optional imports for charting functionality (DISABLED for stability)
+# Optional imports for charting functionality
 HAS_MATPLOTLIB = False
-# Charting functionality disabled to prevent executable issues
-# try:
-#     import matplotlib.pyplot as plt
-#     import matplotlib.patches as patches
-#     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-#     import seaborn as sns
-#     HAS_MATPLOTLIB = True
-# except ImportError:
-#     pass
-
-# Set to None since charting is disabled
-plt = None
-patches = None
-FigureCanvasTkAgg = None
-sns = None
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    import seaborn as sns
+    HAS_MATPLOTLIB = True
+except ImportError:
+    plt = None
+    patches = None
+    FigureCanvasTkAgg = None
+    sns = None
 
 # Application version
-VERSION = "1.0.4"
+VERSION = "1.1.2"
 
 LABELS = ["(Unclassified)", "no code", "read failure", "occluded", "image quality", "damaged", "other"]
 
@@ -410,7 +406,7 @@ class ImageLabelTool:
         tk.Label(parcel_section, text="Parcel count", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#81C784").pack()
         self.parcel_count_var = tk.StringVar()
         self.parcel_count_label = tk.Label(parcel_section, textvariable=self.parcel_count_var, 
-                                         font=("Arial", 13), bg="#F5F5F5", fg="#424242", wraplength=200,
+                                         font=("Arial", 13), bg="#F5F5F5", fg="#424242", wraplength=300,
                                          justify=tk.LEFT, anchor="w")
         self.parcel_count_label.pack(pady=(3, 0), fill=tk.X)
         
@@ -421,9 +417,71 @@ class ImageLabelTool:
         tk.Label(total_section, text="Net Stats", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#5E88D8").pack()
         self.parcel_stats_var = tk.StringVar()
         self.parcel_stats_label = tk.Label(total_section, textvariable=self.parcel_stats_var, 
-                                         font=("Arial", 13), fg="#424242", bg="#F5F5F5", wraplength=200,
+                                         font=("Arial", 13), fg="#424242", bg="#F5F5F5", wraplength=300,
                                          justify=tk.LEFT, anchor="w")
         self.parcel_stats_label.pack(pady=(3, 0), fill=tk.X)
+
+        # Pie chart button for parcel statistics
+        pie_chart_frame = tk.Frame(analysis_tab, bg="#FAFAFA")
+        pie_chart_frame.pack(fill=tk.X, pady=(5, 10))
+        
+        self.btn_parcel_pie_chart = tk.Button(pie_chart_frame, text="📊 Show Parcel Pie Chart", 
+                                            command=self.show_parcel_pie_chart,
+                                            bg="#4CAF50", fg="white", font=("Arial", 11, "bold"),
+                                            relief="raised", bd=2, padx=10, pady=5)
+        self.btn_parcel_pie_chart.pack(anchor="center")
+
+        # === TAB 3: Log File Analysis ===
+        log_file_tab = tk.Frame(stats_notebook, bg="#FAFAFA")
+        stats_notebook.add(log_file_tab, text="Log File")
+        
+        # Log file selection section
+        log_file_section = tk.Frame(log_file_tab, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
+        log_file_section.pack(fill=tk.X, pady=(0, 6))
+        
+        tk.Label(log_file_section, text="Log File Analysis", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#9C27B0").pack()
+        
+        # File selection button
+        select_button_frame = tk.Frame(log_file_section, bg="#F5F5F5")
+        select_button_frame.pack(fill=tk.X, pady=(5, 5))
+        
+        self.btn_select_log_file = tk.Button(select_button_frame, text="📂 Select Log File", 
+                                           command=self.select_log_file,
+                                           bg="#CCCCCC", fg="#666666", font=("Arial", 10, "bold"),
+                                           relief="raised", bd=2, padx=8, pady=3, state='disabled')
+        self.btn_select_log_file.pack(side=tk.LEFT)
+        
+        # Selected file label
+        self.selected_log_file_var = tk.StringVar(value="No file selected")
+        self.selected_log_file_label = tk.Label(log_file_section, textvariable=self.selected_log_file_var,
+                                               bg="#F5F5F5", font=("Arial", 9), fg="#666666",
+                                               wraplength=180, justify=tk.LEFT, anchor="w")
+        self.selected_log_file_label.pack(fill=tk.X, pady=(2, 0))
+        
+        # Log analysis results section  
+        log_results_section = tk.Frame(log_file_tab, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
+        log_results_section.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
+        
+        tk.Label(log_results_section, text="Analysis Results", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#9C27B0").pack()
+        
+        # Results display area with scrollbar
+        results_frame = tk.Frame(log_results_section, bg="#F5F5F5")
+        results_frame.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+        
+        # Create scrollable text area
+        self.log_results_text = tk.Text(results_frame, height=12, wrap=tk.WORD, 
+                                       font=("Consolas", 9), bg="#FFFFFF", fg="#333333",
+                                       relief="solid", bd=1, padx=5, pady=5)
+        
+        log_scrollbar = tk.Scrollbar(results_frame)
+        log_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.log_results_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.log_results_text.config(yscrollcommand=log_scrollbar.set)
+        log_scrollbar.config(command=self.log_results_text.yview)
+        
+        # Initially disable text editing
+        self.log_results_text.config(state=tk.DISABLED)
 
         # Auto monitoring section content (now in Progress tab)
         tk.Label(auto_detect_section, text="Auto Monitor New Files", bg="#FFF3E0", font=("Arial", 12, "bold"), fg="#F57C00").pack()
@@ -521,6 +579,9 @@ class ImageLabelTool:
         
         # Initialize button state based on default filter
         self.update_filter_button_state()
+        
+        # Initialize log file button state (disabled initially)
+        self.update_log_file_button_state()
 
     def validate_numeric_input(self, new_value):
         """Validate that input contains only numbers and decimal points"""
@@ -622,7 +683,8 @@ class ImageLabelTool:
         for f in all_files:
             self.all_image_paths.append(os.path.join(folder, f))
         
-        self.all_image_paths.sort()
+        # Custom sort by trigger ID and sub-image count
+        self.all_image_paths.sort(key=self.get_image_sort_key)
         self.current_index = 0
         self.labels = {}  # Reset labels for new folder
         
@@ -636,6 +698,54 @@ class ImageLabelTool:
         # Update warning message and navigation buttons
         self.update_warning_message()
         self.update_navigation_buttons()
+        self.update_log_file_button_state()  # Enable log file button when folder is selected
+
+    def get_image_sort_key(self, image_path):
+        """
+        Extract sorting key from image filename for proper ordering.
+        Expected format: XXXXXXXXXX_XXXX_XXX_timestamp.jpg
+        Returns tuple (trigger_id, sub_image_count) for sorting.
+        """
+        try:
+            filename = os.path.basename(image_path)
+            # Split by underscore to get parts
+            parts = filename.split('_')
+            
+            if len(parts) >= 2:
+                # First part: trigger ID (remove leading zeros for numeric comparison)
+                trigger_id_str = parts[0]
+                trigger_id = int(trigger_id_str) if trigger_id_str.isdigit() else 0
+                
+                # Second part: sub-image count
+                sub_image_str = parts[1]
+                sub_image_count = int(sub_image_str) if sub_image_str.isdigit() else 0
+                
+                return (trigger_id, sub_image_count)
+            else:
+                # Fallback to filename if parsing fails
+                return (0, 0)
+        except (ValueError, IndexError):
+            # Fallback to filename sorting if parsing fails
+            return (0, 0)
+
+    def update_log_file_button_state(self):
+        """Enable/disable the log file selection button based on folder selection"""
+        if not hasattr(self, 'btn_select_log_file'):
+            return
+            
+        if hasattr(self, 'folder_path') and self.folder_path:
+            # Enable the button when a folder is selected
+            self.btn_select_log_file.config(state='normal', bg="#9C27B0", fg="white")
+        else:
+            # Disable the button when no folder is selected
+            self.btn_select_log_file.config(state='disabled', bg="#CCCCCC", fg="#666666")
+            # Clear any previous log file selection
+            self.selected_log_file_var.set("No file selected")
+            # Clear log results
+            if hasattr(self, 'log_results_text'):
+                self.log_results_text.config(state=tk.NORMAL)
+                self.log_results_text.delete(1.0, tk.END)
+                self.log_results_text.config(state=tk.DISABLED)
 
     def show_image(self):
         if not self.image_paths:
@@ -1007,6 +1117,459 @@ class ImageLabelTool:
         self.apply_filter()
         self.update_filter_button_state()
 
+    def show_parcel_pie_chart(self):
+        """Display a modal dialog with pie chart for parcel statistics"""
+        if not HAS_MATPLOTLIB:
+            messagebox.showwarning("Charts Unavailable", 
+                                 "Chart functionality is not available.\n"
+                                 "Matplotlib is required for charts but not installed.\n"
+                                 "The main application works without charts.")
+            return
+            
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            messagebox.showwarning("No Data", "Please select a folder with images first.")
+            return
+        
+        # Calculate parcel statistics
+        parcel_data = self.calculate_parcel_stats_for_chart()
+        if not parcel_data:
+            messagebox.showinfo("No Data", "No classified parcels found to display in pie chart.")
+            return
+        
+        # Create modal dialog
+        pie_dialog = tk.Toplevel(self.root)
+        pie_dialog.title(f"Parcel Statistics Pie Chart - Image Label Tool v{VERSION}")
+        pie_dialog.geometry("800x650")
+        pie_dialog.configure(bg="#FAFAFA")
+        pie_dialog.transient(self.root)  # Make it modal
+        pie_dialog.grab_set()  # Make it modal
+        
+        # Center the dialog
+        pie_dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 50, self.root.winfo_rooty() + 50))
+        
+        # Create the pie chart and store references for cleanup
+        chart_canvas, chart_figure = self.create_parcel_pie_chart_in_dialog(pie_dialog, parcel_data)
+        
+        # Function to properly close the dialog and cleanup matplotlib resources
+        def close_pie_dialog():
+            try:
+                if chart_canvas:
+                    chart_canvas.get_tk_widget().destroy()
+                if chart_figure:
+                    plt.close(chart_figure)
+            except:
+                pass  # Ignore any cleanup errors
+            pie_dialog.destroy()
+        
+        # Add close button
+        close_frame = tk.Frame(pie_dialog, bg="#FAFAFA")
+        close_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
+        
+        close_btn = tk.Button(close_frame, text="Close", command=close_pie_dialog,
+                             bg="#757575", fg="white", font=("Arial", 11, "bold"),
+                             relief="raised", bd=2, padx=20, pady=5)
+        close_btn.pack(anchor="center")
+        
+        # Also bind the window close event to our cleanup function
+        pie_dialog.protocol("WM_DELETE_WINDOW", close_pie_dialog)
+
+    def calculate_parcel_stats_for_chart(self):
+        """Calculate parcel statistics for pie chart display using the same logic as Net Stats"""
+        # Get the total number from the UI field
+        try:
+            total_entered = int(self.total_parcels_var.get()) if self.total_parcels_var.get() else 0
+        except ValueError:
+            messagebox.showwarning("Invalid Data", "Please enter a valid total number of parcels first.")
+            return {}
+
+        if total_entered <= 0:
+            messagebox.showwarning("Invalid Data", "Total number of parcels must be greater than 0.")
+            return {}
+
+        # Get current parcel statistics using the same logic as the Net Stats
+        parcel_labels_dict = self.calculate_parcel_labels()
+        actual_parcels = len(parcel_labels_dict)
+        
+        parcels_no_code = 0
+        parcels_read_failure = 0
+        
+        for parcel_label in parcel_labels_dict.values():
+            if parcel_label == "no code":
+                parcels_no_code += 1
+            elif parcel_label == "read failure":
+                parcels_read_failure += 1
+        
+        # Calculate parcels with unreadable code
+        parcels_unreadable_code = actual_parcels - parcels_no_code - parcels_read_failure
+        
+        # Calculate readable parcels using the same formula as Net Stats
+        total_readable = total_entered - actual_parcels + parcels_read_failure
+        
+        # Calculate successful reads
+        parcels_successful_reads = total_readable - parcels_read_failure
+        
+        print(f"DEBUG: Using Net Stats logic:")
+        print(f"  - Total entered: {total_entered}")
+        print(f"  - Actual parcels found: {actual_parcels}")
+        print(f"  - Parcels no code: {parcels_no_code}")
+        print(f"  - Parcels read failure: {parcels_read_failure}")
+        print(f"  - Parcels unreadable code: {parcels_unreadable_code}")
+        print(f"  - Total readable: {total_readable}")
+        print(f"  - Successful reads: {parcels_successful_reads}")
+        
+        # Build result dictionary
+        parcel_stats = {}
+        if parcels_no_code > 0:
+            parcel_stats["Parcels with No Code"] = parcels_no_code
+        if parcels_read_failure > 0:
+            parcel_stats["Parcels with Read Failure"] = parcels_read_failure
+        if parcels_unreadable_code > 0:
+            parcel_stats["Parcels with Unreadable Code"] = parcels_unreadable_code
+        if parcels_successful_reads > 0:
+            parcel_stats["Parcels with Successful Reads"] = parcels_successful_reads
+        
+        print(f"DEBUG: Final pie chart data: {parcel_stats}")
+        
+        return parcel_stats
+
+    def create_parcel_pie_chart_in_dialog(self, parent, parcel_data):
+        """Create a pie chart showing parcel statistics in the given parent widget"""
+        if not HAS_MATPLOTLIB:
+            return None, None
+        
+        # Set up matplotlib style
+        plt.style.use('default')
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(9, 6))
+        fig.patch.set_facecolor('#FAFAFA')
+        
+        # Prepare data
+        labels = list(parcel_data.keys())
+        sizes = list(parcel_data.values())
+        
+        # Convert labels to multi-line format for better fit
+        formatted_labels = []
+        for label in labels:
+            if "Parcels with" in label:
+                # Split "Parcels with X" into two lines
+                parts = label.split(" with ")
+                if len(parts) == 2:
+                    formatted_labels.append(f"Parcels with\n{parts[1]}")
+                else:
+                    formatted_labels.append(label)
+            else:
+                formatted_labels.append(label)
+        
+        # Define colors for different statuses
+        color_map = {
+            "Parcels with No Code": "#FF5722",          # Deep Orange/Red
+            "Parcels with Read Failure": "#F44336",     # Red
+            "Parcels with Unreadable Code": "#FF9800",  # Orange
+            "Parcels with Successful Reads": "#4CAF50"  # Green
+        }
+        
+        colors = [color_map.get(label, "#9E9E9E") for label in labels]
+        
+        # Create pie chart with formatted multi-line labels
+        wedges, texts, autotexts = ax.pie(sizes, labels=formatted_labels, colors=colors, autopct='%1.1f%%',
+                                         startangle=90, textprops={'fontsize': 9, 'ha': 'center'})
+        
+        # Improve text readability
+        for autotext in autotexts:
+            autotext.set_color('white')
+            autotext.set_fontweight('bold')
+        
+        # Improve label text positioning and formatting
+        for text in texts:
+            text.set_fontweight('bold')
+            text.set_fontsize(9)
+        
+        ax.set_title('Parcel Classification Status Distribution', fontsize=14, fontweight='bold', pad=20)
+        
+        # Equal aspect ratio ensures that pie is drawn as a circle
+        ax.axis('equal')
+        
+        # Embed in tkinter
+        canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        return canvas, fig
+
+    def select_log_file(self):
+        """Open file dialog to select a log file for analysis"""
+        from tkinter import filedialog
+        
+        # Determine initial directory - use the selected folder if available
+        if hasattr(self, 'folder_path') and self.folder_path:
+            initial_dir = self.folder_path
+        else:
+            initial_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Open file dialog for log files
+        file_path = filedialog.askopenfilename(
+            title="Select Log File for Analysis",
+            filetypes=[
+                ("All files", "*.*")
+            ],
+            initialdir=initial_dir
+        )
+        
+        if file_path:
+            # Update selected file label
+            filename = os.path.basename(file_path)
+            self.selected_log_file_var.set(f"Selected: {filename}")
+            
+            # Analyze the log file
+            self.analyze_log_file(file_path)
+    
+    def analyze_log_file(self, file_path):
+        """Analyze the selected log file and display results"""
+        try:
+            # Clear previous results
+            self.log_results_text.config(state=tk.NORMAL)
+            self.log_results_text.delete(1.0, tk.END)
+            
+            # Read and parse the log file
+            with open(file_path, 'r', encoding='utf-8') as f:
+                log_content = f.read()
+            
+            # Analyze the log content
+            analysis_results = self.parse_log_content(log_content)
+            
+            # Display results
+            self.display_log_analysis_results(analysis_results)
+            
+        except Exception as e:
+            # Display error message
+            self.log_results_text.config(state=tk.NORMAL)
+            self.log_results_text.delete(1.0, tk.END)
+            self.log_results_text.insert(tk.END, f"Error analyzing log file:\n{str(e)}")
+            self.log_results_text.config(state=tk.DISABLED)
+    
+    def parse_log_content(self, log_content):
+        """Parse log content and extract statistics"""
+        import re
+        
+        # Get list of image files in the selected folder to cross-reference
+        saved_image_ids = set()
+        if hasattr(self, 'folder_path') and self.folder_path:
+            try:
+                # Get all image files and extract trigger IDs from filenames
+                image_files = [f for f in os.listdir(self.folder_path)
+                             if f.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".gif"))]
+                
+                # Extract trigger IDs from filenames (format: XXXXXXXXXX_XXXX_XXX_timestamp.jpg)
+                # The trigger ID is the first part before the first underscore, with leading zeros removed
+                for filename in image_files:
+                    # Extract the first part before underscore
+                    parts = filename.split('_')
+                    if parts and len(parts[0]) >= 10:  # Should be 10 digits
+                        trigger_id_str = parts[0]
+                        # Convert to integer to remove leading zeros, then back to string
+                        try:
+                            trigger_id = str(int(trigger_id_str))
+                            saved_image_ids.add(trigger_id)
+                        except ValueError:
+                            continue  # Skip if not a valid number
+            except Exception:
+                # If we can't read the folder, continue without cross-reference
+                pass
+        
+        # Initialize counters and tracking lists
+        unique_ids = set()
+        false_triggers = 0
+        timeouts = 0
+        total_entries = 0
+        total_noread = 0         # Track total NOREAD entries
+        missed_trigger_ids = []  # Track IDs with false triggers (no corresponding saved image)
+        timeout_ids = []         # Track IDs with timeouts
+        
+        # Split into lines
+        lines = log_content.split('\n')
+        
+        # Patterns to look for
+        id_pattern = r'ID:\s*(\d+)'  # Look for "ID: " followed by digits
+        false_trigger_patterns = [
+            r'false.trigger',
+            r'no.code.detected',
+            r'empty.result',
+            r'detection.failed'
+            # Note: removed 'noread' from here - we'll handle NOREAD separately
+        ]
+        timeout_patterns = [
+            r'timeout',
+            r'timed.out',
+            r'no.response'
+        ]
+        
+        # Process each line
+        for line in lines:
+            original_line = line.strip()  # Keep original case for ID extraction
+            line_lower = line.strip().lower()  # Lowercase for pattern matching
+            if not original_line:
+                continue
+                
+            total_entries += 1
+            
+            # Extract unique IDs from original case line
+            id_matches = re.findall(id_pattern, original_line)
+            current_line_ids = []
+            for id_match in id_matches:
+                unique_ids.add(id_match)
+                current_line_ids.append(id_match)
+            
+            # Check for false triggers in lowercase
+            is_false_trigger = False
+            for pattern in false_trigger_patterns:
+                if re.search(pattern, line_lower):
+                    false_triggers += 1
+                    is_false_trigger = True
+                    # Add all IDs from this line to missed triggers
+                    for id_val in current_line_ids:
+                        missed_trigger_ids.append(id_val)
+                    break
+            
+            # Special handling for NOREAD - only consider it a missed trigger if no saved image exists
+            if not is_false_trigger and 'noread' in line_lower:
+                total_noread += 1  # Count all NOREAD entries
+                for id_val in current_line_ids:
+                    # Only mark as missed trigger if there's no corresponding saved image
+                    if id_val not in saved_image_ids:
+                        false_triggers += 1
+                        missed_trigger_ids.append(id_val)
+                        is_false_trigger = True
+            
+            # Check for timeouts in lowercase (only if not already a false trigger)
+            if not is_false_trigger:
+                for pattern in timeout_patterns:
+                    if re.search(pattern, line_lower):
+                        timeouts += 1
+                        # Add all IDs from this line to timeouts
+                        for id_val in current_line_ids:
+                            timeout_ids.append(id_val)
+                        break
+        
+        # Calculate effective parcel count
+        # Effective count = unique IDs - false triggers - timeouts
+        effective_parcel_count = len(unique_ids) - false_triggers - timeouts
+        if effective_parcel_count < 0:
+            effective_parcel_count = 0
+        
+        return {
+            'total_entries': total_entries,
+            'unique_ids': len(unique_ids),
+            'unique_id_list': sorted(list(unique_ids)),
+            'false_triggers': false_triggers,
+            'timeouts': timeouts,
+            'total_noread': total_noread,
+            'effective_parcel_count': effective_parcel_count,
+            'missed_trigger_ids': missed_trigger_ids,
+            'timeout_ids': timeout_ids
+        }
+    
+    def display_log_analysis_results(self, results):
+        """Display the log analysis results in the text area"""
+        self.log_results_text.config(state=tk.NORMAL)
+        self.log_results_text.delete(1.0, tk.END)
+        
+        # Format and display results
+        output = []
+        output.append("=== LOG FILE ANALYSIS RESULTS ===\n")
+        output.append(f"Total Log Entries: {results['total_entries']}")
+        output.append(f"Unique IDs Detected: {results['unique_ids']}")
+        output.append(f"Total NOREAD Entries: {results.get('total_noread', 0)}")
+        output.append(f"False Triggers: {results['false_triggers']}")
+        output.append(f"Timeouts: {results['timeouts']}")
+        output.append(f"Effective Parcel Count: {results['effective_parcel_count']}")
+        
+        # Calculate and display NOREAD rate
+        total_noread = results.get('total_noread', 0)
+        unique_ids = results['unique_ids']
+        missed_triggers = results['false_triggers']
+        successful_ids = unique_ids - missed_triggers
+        
+        if successful_ids > 0:
+            noread_rate = (total_noread / successful_ids) * 100
+            read_rate = 100.0 - noread_rate
+            output.append(f"NOREAD Rate: {noread_rate:.1f}% ({total_noread} NOREAD / {successful_ids} successful IDs)")
+            output.append(f"Read Rate: {read_rate:.1f}% (successful reads on first attempt)")
+        else:
+            output.append("NOREAD Rate: N/A (no successful IDs)")
+            output.append("Read Rate: N/A (no successful IDs)")
+        
+        output.append("\n" + "="*40 + "\n")
+        
+        # Show calculation breakdown
+        output.append("CALCULATION BREAKDOWN:")
+        output.append(f"  Unique IDs Found: {results['unique_ids']}")
+        output.append(f"  - False Triggers: {results['false_triggers']}")
+        output.append(f"  - Timeouts: {results['timeouts']}")
+        output.append(f"  = Effective Count: {results['effective_parcel_count']}")
+        output.append("\n" + "="*40 + "\n")
+        
+        # Join and display
+        result_text = "\n".join(output)
+        self.log_results_text.insert(tk.END, result_text)
+        self.log_results_text.config(state=tk.DISABLED)
+        
+        # Generate CSV file with missed triggers and timeouts
+        self.generate_issues_csv(results)
+
+    def generate_issues_csv(self, results):
+        """Generate a CSV file with IDs for missed triggers and timeouts"""
+        import csv
+        from datetime import datetime
+        
+        # Create CSV filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Use the same directory as the selected folder if available, otherwise use current directory
+        if hasattr(self, 'folder_path') and self.folder_path:
+            csv_path = os.path.join(self.folder_path, f"log_analysis_issues_{timestamp}.csv")
+        else:
+            csv_path = f"log_analysis_issues_{timestamp}.csv"
+        
+        try:
+            # Combine missed triggers and timeouts into one list
+            all_issues = []
+            
+            # Add missed triggers
+            for id_val in results.get('missed_trigger_ids', []):
+                all_issues.append((id_val, 'MissedTrig'))
+            
+            # Add timeouts
+            for id_val in results.get('timeout_ids', []):
+                all_issues.append((id_val, 'Timeout'))
+            
+            # Sort by ID (convert to int for proper numerical sorting)
+            all_issues.sort(key=lambda x: int(x[0]) if x[0].isdigit() else float('inf'))
+            
+            # Write CSV file
+            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Write header
+                writer.writerow(['ID', 'Issue_Type'])
+                
+                # Write data rows
+                for id_val, issue_type in all_issues:
+                    writer.writerow([id_val, issue_type])
+            
+            # Update display to show CSV was generated
+            self.log_results_text.config(state=tk.NORMAL)
+            self.log_results_text.insert(tk.END, f"\n\n📄 CSV Generated: {os.path.basename(csv_path)}")
+            self.log_results_text.insert(tk.END, f"\n   Location: {csv_path}")
+            self.log_results_text.insert(tk.END, f"\n   Total issues exported: {len(all_issues)}")
+            self.log_results_text.config(state=tk.DISABLED)
+            
+        except Exception as e:
+            # If CSV generation fails, show error in display
+            self.log_results_text.config(state=tk.NORMAL)
+            self.log_results_text.insert(tk.END, f"\n\n❌ Error generating CSV: {str(e)}")
+            self.log_results_text.config(state=tk.DISABLED)
+
     def update_filter_button_state(self):
         """Enable/disable the filter folder generation button based on current filter"""
         if not hasattr(self, 'btn_gen_filter_folder'):
@@ -1125,22 +1688,49 @@ class ImageLabelTool:
     def save_csv(self):
         if not self.csv_filename:
             return
-        with open(self.csv_filename, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
-            # Write header
-            writer.writerow(['image_path', 'image_label', 'parcel_number', 'parcel_label', 'parcel_index'])
             
-            # Calculate current parcel labels
-            parcel_labels_dict = self.calculate_parcel_labels()
+        try:
+            with open(self.csv_filename, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                # Write header
+                writer.writerow(['image_path', 'image_label', 'parcel_number', 'parcel_label', 'parcel_index'])
+                
+                # Calculate current parcel labels
+                parcel_labels_dict = self.calculate_parcel_labels()
+                
+                for path, label in self.labels.items():
+                    parcel_id = self.get_parcel_number(path)
+                    parcel_label = parcel_labels_dict.get(parcel_id, "no code") if parcel_id else "no code"
+                    parcel_index = self.get_parcel_index(path)
+                    writer.writerow([path, label, parcel_id or "", parcel_label, parcel_index or ""])
             
-            for path, label in self.labels.items():
-                parcel_id = self.get_parcel_number(path)
-                parcel_label = parcel_labels_dict.get(parcel_id, "no code") if parcel_id else "no code"
-                parcel_index = self.get_parcel_index(path)
-                writer.writerow([path, label, parcel_id or "", parcel_label, parcel_index or ""])
-        
-        # Also generate statistics CSV file
-        self.save_stats_csv()
+            # Also generate statistics CSV file
+            self.save_stats_csv()
+            
+        except PermissionError as e:
+            print(f"ERROR: Permission denied when saving CSV: {self.csv_filename}")
+            print("Possible solutions:")
+            print("1. Close Excel if the file is open")
+            print("2. Check if OneDrive is syncing the folder")
+            print("3. Try running as administrator")
+            print("4. Choose a different folder location")
+            # Show message to user
+            try:
+                messagebox.showerror("File Save Error", 
+                    f"Cannot save file:\n{os.path.basename(self.csv_filename)}\n\n"
+                    f"The file might be open in Excel or another program.\n"
+                    f"Please close any programs using this file and try again.")
+            except:
+                pass
+                
+        except Exception as e:
+            print(f"ERROR: Unexpected error saving CSV: {str(e)}")
+            try:
+                messagebox.showerror("File Save Error", 
+                    f"Cannot save file:\n{os.path.basename(self.csv_filename)}\n\n"
+                    f"Error: {str(e)}")
+            except:
+                pass
 
     def save_stats_csv(self):
         """Generate a statistics CSV file with all counting and parcel information"""
@@ -1162,16 +1752,44 @@ class ImageLabelTool:
         # Calculate all statistics
         stats_data = self.calculate_comprehensive_stats()
         
-        with open(stats_filename, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.writer(f)
+        try:
+            with open(stats_filename, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                
+                # Write statistics header
+                writer.writerow(['category', 'metric', 'value', 'description'])
+                
+                # Write all statistics
+                for category, metrics in stats_data.items():
+                    for metric, data in metrics.items():
+                        writer.writerow([category, metric, data['value'], data['description']])
             
-            # Write statistics header
-            writer.writerow(['category', 'metric', 'value', 'description'])
+            print(f"Stats CSV saved successfully: {stats_filename}")
             
-            # Write all statistics
-            for category, metrics in stats_data.items():
-                for metric, data in metrics.items():
-                    writer.writerow([category, metric, data['value'], data['description']])
+        except PermissionError as e:
+            print(f"ERROR: Permission denied when saving stats CSV: {stats_filename}")
+            print("Possible solutions:")
+            print("1. Close Excel if the file is open")
+            print("2. Check if OneDrive is syncing the folder")
+            print("3. Try running as administrator")
+            print("4. Choose a different folder location")
+            # Try to show a message box to the user
+            try:
+                messagebox.showerror("File Save Error", 
+                    f"Cannot save stats file:\n{os.path.basename(stats_filename)}\n\n"
+                    f"The file might be open in Excel or another program.\n"
+                    f"Please close any programs using this file and try again.")
+            except:
+                pass  # If messagebox fails, just continue
+                
+        except Exception as e:
+            print(f"ERROR: Unexpected error saving stats CSV: {str(e)}")
+            try:
+                messagebox.showerror("File Save Error", 
+                    f"Cannot save stats file:\n{os.path.basename(stats_filename)}\n\n"
+                    f"Error: {str(e)}")
+            except:
+                pass
 
     def calculate_comprehensive_stats(self):
         """Calculate comprehensive statistics for the stats CSV"""
@@ -2028,6 +2646,9 @@ class ImageLabelTool:
             elif parcel_label == "read failure":
                 parcels_read_failure += 1
         
+        # Calculate parcels with unreadable code
+        parcels_unreadable_code = total_parcels - parcels_no_code - parcels_read_failure
+        
         # Calculate total readable parcels using expected total from text field
         try:
             total_entered = int(self.total_parcels_var.get()) if self.total_parcels_var.get() else 0
@@ -2041,6 +2662,7 @@ class ImageLabelTool:
             f"Number of parcels: {total_parcels}",
             f"Parcels with no code: {parcels_no_code}",
             f"Parcels with read failure: {parcels_read_failure}",
+            f"Parcels with unreadable code: {parcels_unreadable_code}",
             f"Total readable parcels: {total_readable}"
         ]
         
@@ -2091,11 +2713,14 @@ class ImageLabelTool:
         self.parcel_stats_var.set("\n".join(lines))
 
     def auto_detect_total_groups(self):
-        """Auto-detect total number of parcels by finding the highest ID value from filenames"""
+        """Auto-detect total number of parcels by finding the range between min and max ID values from filenames"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             return
         
         max_id = 0
+        min_id = float('inf')
+        valid_ids_found = False
+        
         for path in self.all_image_paths:
             filename = os.path.basename(path)
             filename_without_ext = os.path.splitext(filename)[0]
@@ -2108,13 +2733,19 @@ class ImageLabelTool:
                     id_part = parts[0]
                     id_number = int(id_part)
                     max_id = max(max_id, id_number)
+                    min_id = min(min_id, id_number)
+                    valid_ids_found = True
                 except ValueError:
                     # Skip files where the first part is not a number
                     continue
         
-        if max_id > 0:
-            # Set the total parcels field with the highest ID value found
-            self.total_parcels_var.set(str(max_id))
+        if valid_ids_found and max_id >= min_id:
+            # Calculate total parcels as the range: max_id - min_id + 1
+            total_parcels = max_id - min_id + 1
+            print(f"DEBUG: Auto-detected parcels range: {min_id} to {max_id} = {total_parcels} total parcels")
+            
+            # Set the total parcels field with the calculated range
+            self.total_parcels_var.set(str(total_parcels))
             # Update statistics immediately
             self.update_total_stats()
 
@@ -2931,7 +3562,7 @@ class ImageLabelTool:
             for f in current_files:
                 current_image_paths.append(os.path.join(self.folder_path, f))
             
-            current_image_paths.sort()
+            current_image_paths.sort(key=self.get_image_sort_key)
             
             # Find new images (not in self.all_image_paths)
             new_images = []
@@ -2941,7 +3572,7 @@ class ImageLabelTool:
                 # Update the all_image_paths list with new images
                 if new_images:
                     self.all_image_paths.extend(new_images)
-                    self.all_image_paths.sort()
+                    self.all_image_paths.sort(key=self.get_image_sort_key)
             else:
                 # If all_image_paths doesn't exist, all current images are "new"
                 new_images = current_image_paths
