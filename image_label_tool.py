@@ -30,7 +30,7 @@ except ImportError:
 # Application version
 VERSION = "1.2.7"
 
-LABELS = ["(Unclassified)", "no label", "read failure", "occluded", "image quality", "damaged", "other"]
+LABELS = ["(Unclassified)", "no label", "read failure", "incomplete", "unreadable"]
 
 class ImageLabelTool:
     def __init__(self, root):
@@ -172,7 +172,7 @@ class ImageLabelTool:
         filter_frame.pack(side=tk.LEFT, padx=(20, 0))
         tk.Label(filter_frame, text="Filter:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
         self.filter_var = tk.StringVar(value="(Unclassified) only")
-        filter_options = ["All images", "(Unclassified) only", "no label only", "read failure only", "occluded only", "image quality only", "damaged only", "other only"]
+        filter_options = ["All images", "(Unclassified) only", "no label only", "read failure only", "incomplete only", "unreadable only"]
         self.filter_menu = tk.OptionMenu(filter_frame, self.filter_var, *filter_options, command=self.on_filter_changed)
         self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
         self.filter_menu.pack(side=tk.LEFT, padx=(5, 0))
@@ -330,10 +330,8 @@ class ImageLabelTool:
             "(Unclassified)": "#F5F5F5", 
             "no label": "#FFF3E0", 
             "read failure": "#FCE4EC", 
-            "occluded": "#E3F2FD",
-            "image quality": "#F1F8E9",
-            "damaged": "#FFF8E1",
-            "other": "#F3E5F5"
+            "incomplete": "#E3F2FD",
+            "unreadable": "#F1F8E9"
         }
         
         # Add keyboard shortcuts to labels
@@ -341,10 +339,8 @@ class ImageLabelTool:
             "(Unclassified)": "",
             "no label": " (Q)",
             "read failure": " (W)", 
-            "occluded": " (E)",
-            "image quality": " (R)",
-            "damaged": " (T)",
-            "other": " (Y)"
+            "incomplete": " (E)",
+            "unreadable": " (R)"
         }
         
         self.radio_buttons = []  # Store radio buttons for enabling/disabling
@@ -597,10 +593,6 @@ class ImageLabelTool:
         self.root.bind('<KeyPress-E>', self.label_shortcut_e)
         self.root.bind('<KeyPress-r>', self.label_shortcut_r)
         self.root.bind('<KeyPress-R>', self.label_shortcut_r)
-        self.root.bind('<KeyPress-t>', self.label_shortcut_t)
-        self.root.bind('<KeyPress-T>', self.label_shortcut_t)
-        self.root.bind('<KeyPress-y>', self.label_shortcut_y)
-        self.root.bind('<KeyPress-Y>', self.label_shortcut_y)
         
         # Bind O/P keys for navigation (avoiding arrow key conflicts with radio buttons)
         self.root.bind('<KeyPress-o>', self.prev_image_shortcut)
@@ -1128,13 +1120,13 @@ class ImageLabelTool:
                 self.jump_to_next_unclassified()
 
     def label_shortcut_e(self, event=None):
-        """Keyboard shortcut: E for 'occluded'"""
+        """Keyboard shortcut: E for 'incomplete'"""
         if self.image_paths:
             # Check if current image was unclassified before setting new label
             current_path = self.image_paths[self.current_index]
             was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
             
-            self.label_var.set("occluded")
+            self.label_var.set("incomplete")
             self.set_label_radio()
             
             # Only jump to next unclassified if this image was previously unclassified
@@ -1142,41 +1134,13 @@ class ImageLabelTool:
                 self.jump_to_next_unclassified()
 
     def label_shortcut_r(self, event=None):
-        """Keyboard shortcut: R for 'image quality'"""
+        """Keyboard shortcut: R for 'unreadable'"""
         if self.image_paths:
             # Check if current image was unclassified before setting new label
             current_path = self.image_paths[self.current_index]
             was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
             
-            self.label_var.set("image quality")
-            self.set_label_radio()
-            
-            # Only jump to next unclassified if this image was previously unclassified
-            if was_unclassified:
-                self.jump_to_next_unclassified()
-
-    def label_shortcut_t(self, event=None):
-        """Keyboard shortcut: T for 'damaged'"""
-        if self.image_paths:
-            # Check if current image was unclassified before setting new label
-            current_path = self.image_paths[self.current_index]
-            was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
-            
-            self.label_var.set("damaged")
-            self.set_label_radio()
-            
-            # Only jump to next unclassified if this image was previously unclassified
-            if was_unclassified:
-                self.jump_to_next_unclassified()
-
-    def label_shortcut_y(self, event=None):
-        """Keyboard shortcut: Y for 'other'"""
-        if self.image_paths:
-            # Check if current image was unclassified before setting new label
-            current_path = self.image_paths[self.current_index]
-            was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
-            
-            self.label_var.set("other")
+            self.label_var.set("unreadable")
             self.set_label_radio()
             
             # Only jump to next unclassified if this image was previously unclassified
@@ -1321,7 +1285,7 @@ class ImageLabelTool:
         sessions_read_failure = 0
         
         for session_label in session_labels_dict.values():
-            if session_label == "no code":
+            if session_label == "no label":
                 sessions_no_code += 1
             elif session_label == "read failure":
                 sessions_read_failure += 1
@@ -1908,7 +1872,7 @@ class ImageLabelTool:
         session_labels_dict = self.calculate_session_labels()
         
         # Count sessions by category
-        no_code_count = sum(1 for label in session_labels_dict.values() if label == "no code")
+        no_code_count = sum(1 for label in session_labels_dict.values() if label == "no label")
         read_failure_count = sum(1 for label in session_labels_dict.values() if label == "read failure")
         
         # Get actual sessions count (number of sessions found in images)
@@ -2150,12 +2114,10 @@ class ImageLabelTool:
             # Map filter names to label values
             filter_map = {
                 "(Unclassified) only": "(Unclassified)",
-                "no code only": "no code",
+                "no label only": "no label",
                 "read failure only": "read failure",
-                "occluded only": "occluded",
-                "image quality only": "image quality",
-                "damaged only": "damaged",
-                "other only": "other"
+                "incomplete only": "incomplete",
+                "unreadable only": "unreadable"
             }
             
             target_label = filter_map.get(filter_value)
@@ -2282,7 +2244,7 @@ class ImageLabelTool:
                         relative_path = os.path.basename(path)
                     
                     session_id = self.get_session_number(path)
-                    session_label = session_labels_dict.get(session_id, "no code") if session_id else "no code"
+                    session_label = session_labels_dict.get(session_id, "no label") if session_id else "no label"
                     session_index = self.get_session_index(path)
                     writer.writerow([relative_path, label, session_id or "", session_label, session_index or ""])
             
@@ -2417,7 +2379,7 @@ class ImageLabelTool:
             session_id = self.get_session_number(path)
             if session_id:
                 unique_sessions.add(session_id)
-                session_label = session_labels_dict.get(session_id, "no code")
+                session_label = session_labels_dict.get(session_id, "no label")
                 session_counts[session_label] = session_counts.get(session_label, 0) + 1
         
         # Store session statistics
@@ -2978,7 +2940,7 @@ class ImageLabelTool:
                 session_labels_dict = self.calculate_session_labels()
                 actual_sessions = len(session_labels_dict)
                 
-                sessions_no_code = sum(1 for label in session_labels_dict.values() if label == "no code")
+                sessions_no_code = sum(1 for label in session_labels_dict.values() if label == "no label")
                 sessions_read_failure = sum(1 for label in session_labels_dict.values() if label == "read failure")
                 
                 total_readable = total_entered - actual_sessions + sessions_read_failure
@@ -3188,24 +3150,18 @@ class ImageLabelTool:
             # 1. If any image has "read failure", session is "read failure" (technical issue)
             if "read failure" in classified_labels:
                 session_labels_dict[session_id] = "read failure"
-            # 2. If any image is "damaged", session is "damaged" (physical issue)
-            elif "damaged" in classified_labels:
-                session_labels_dict[session_id] = "damaged"
-            # 3. If any image has "image quality" issues, session has "image quality" issues
-            elif "image quality" in classified_labels:
-                session_labels_dict[session_id] = "image quality"
-            # 4. If any image is "occluded", session is "occluded"
-            elif "occluded" in classified_labels:
-                session_labels_dict[session_id] = "occluded"
-            # 5. If any image is "other", session is "other"
-            elif "other" in classified_labels:
-                session_labels_dict[session_id] = "other"
-            # 6. If ALL classified images are "no code", session is "no code"
-            elif all(label == "no code" for label in classified_labels):
-                session_labels_dict[session_id] = "no code"
-            # 7. Default: if mix of categories, session is "other"
+            # 2. If any image has "unreadable" issues, session has "unreadable" issues
+            elif "unreadable" in classified_labels:
+                session_labels_dict[session_id] = "unreadable"
+            # 3. If any image is "incomplete", session is "incomplete"
+            elif "incomplete" in classified_labels:
+                session_labels_dict[session_id] = "incomplete"
+            # 4. If ALL classified images are "no label", session is "no label"
+            elif all(label == "no label" for label in classified_labels):
+                session_labels_dict[session_id] = "no label"
+            # 5. Default: if mix of categories, session is "incomplete"
             else:
-                session_labels_dict[session_id] = "other"
+                session_labels_dict[session_id] = "incomplete"
                 
         return session_labels_dict
 
@@ -3223,7 +3179,7 @@ class ImageLabelTool:
         sessions_read_failure = 0
         
         for session_label in session_labels_dict.values():
-            if session_label == "no code":
+            if session_label == "no label":
                 sessions_no_code += 1
             elif session_label == "read failure":
                 sessions_read_failure += 1
@@ -3270,7 +3226,7 @@ class ImageLabelTool:
         sessions_read_failure = 0
         
         for session_label in session_labels_dict.values():
-            if session_label == "no code":
+            if session_label == "no label":
                 sessions_no_code += 1
             elif session_label == "read failure":
                 sessions_read_failure += 1
@@ -3702,7 +3658,7 @@ class ImageLabelTool:
             
             # Determine label based on result with new 7-category system
             if detection_result == 0:
-                label = "no code"  # No barcode detected
+                label = "no label"  # No barcode detected
                 no_code_count += 1
             else:  # detection_result > 0
                 label = "read failure"  # Barcode detected but not readable
@@ -3739,7 +3695,7 @@ class ImageLabelTool:
         self.logger.info("-" * 30)
         self.logger.info("AUTO-CLASSIFICATION SUMMARY:")
         self.logger.info(f"Total processed: {total_images}")
-        self.logger.info(f"Classified as 'no code': {no_code_count}")
+        self.logger.info(f"Classified as 'no label': {no_code_count}")
         self.logger.info(f"Classified as 'read failure': {read_failure_count}")
         self.logger.info("AUTO-CLASSIFICATION SESSION COMPLETED")
         self.logger.info("-" * 50)
@@ -3798,7 +3754,7 @@ class ImageLabelTool:
             
             # Determine label based on result
             if detection_result == 0:
-                label = "no code"  # No barcode detected
+                label = "no label"  # No barcode detected
                 no_code_count += 1
             else:  # detection_result > 0
                 label = "read failure"  # Barcode detected but not readable
@@ -3826,7 +3782,7 @@ class ImageLabelTool:
         self.logger.info("-" * 30)
         self.logger.info("NEW FILES AUTO-CLASSIFICATION SUMMARY:")
         self.logger.info(f"Total new files processed: {total_files}")
-        self.logger.info(f"Classified as 'no code': {no_code_count}")
+        self.logger.info(f"Classified as 'no label': {no_code_count}")
         self.logger.info(f"Classified as 'read failure': {read_failure_count}")
         self.logger.info("NEW FILES AUTO-CLASSIFICATION COMPLETED")
         self.logger.info("-" * 30)
@@ -3867,12 +3823,10 @@ class ImageLabelTool:
         
         # Map filter names to label values and folder names
         filter_map = {
-            "no code only": ("no code", "no_code"),
+            "no label only": ("no label", "no_label"),
             "read failure only": ("read failure", "read_failure"),
-            "occluded only": ("occluded", "occluded"),
-            "image quality only": ("image quality", "image_quality"),
-            "damaged only": ("damaged", "damaged"),
-            "other only": ("other", "other")
+            "incomplete only": ("incomplete", "incomplete"),
+            "unreadable only": ("unreadable", "unreadable")
         }
         
         if filter_value not in filter_map:
@@ -4304,7 +4258,7 @@ class ImageLabelTool:
             
             # Determine label based on result
             if detection_result == 0:
-                label = "no code"
+                label = "no label"
                 no_code_count += 1
             else:  # detection_result > 0
                 label = "read failure"
@@ -4337,7 +4291,7 @@ class ImageLabelTool:
         self.logger.info("-" * 30)
         self.logger.info("AUTO-CLASSIFICATION (TIMER) SUMMARY:")
         self.logger.info(f"Total processed: {total_images}")
-        self.logger.info(f"Classified as 'no code': {no_code_count}")
+        self.logger.info(f"Classified as 'no label': {no_code_count}")
         self.logger.info(f"Classified as 'read failure': {read_failure_count}")
         self.logger.info(f"Completed at: {completion_time}")
         self.logger.info("AUTO-CLASSIFICATION (TIMER) SESSION COMPLETED")
