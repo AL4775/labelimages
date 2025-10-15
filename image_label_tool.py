@@ -30,7 +30,7 @@ except ImportError:
 # Application version
 VERSION = "1.2.7"
 
-LABELS = ["(Unclassified)", "no code", "read failure", "occluded", "image quality", "damaged", "other"]
+LABELS = ["(Unclassified)", "no label", "read failure", "occluded", "image quality", "damaged", "other"]
 
 class ImageLabelTool:
     def __init__(self, root):
@@ -172,7 +172,7 @@ class ImageLabelTool:
         filter_frame.pack(side=tk.LEFT, padx=(20, 0))
         tk.Label(filter_frame, text="Filter:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
         self.filter_var = tk.StringVar(value="(Unclassified) only")
-        filter_options = ["All images", "(Unclassified) only", "no code only", "read failure only", "occluded only", "image quality only", "damaged only", "other only"]
+        filter_options = ["All images", "(Unclassified) only", "no label only", "read failure only", "occluded only", "image quality only", "damaged only", "other only"]
         self.filter_menu = tk.OptionMenu(filter_frame, self.filter_var, *filter_options, command=self.on_filter_changed)
         self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
         self.filter_menu.pack(side=tk.LEFT, padx=(5, 0))
@@ -311,7 +311,7 @@ class ImageLabelTool:
         
         label_colors = {
             "(Unclassified)": "#F5F5F5", 
-            "no code": "#FFF3E0", 
+            "no label": "#FFF3E0", 
             "read failure": "#FCE4EC", 
             "occluded": "#E3F2FD",
             "image quality": "#F1F8E9",
@@ -322,7 +322,7 @@ class ImageLabelTool:
         # Add keyboard shortcuts to labels
         label_shortcuts = {
             "(Unclassified)": "",
-            "no code": " (Q)",
+            "no label": " (Q)",
             "read failure": " (W)", 
             "occluded": " (E)",
             "image quality": " (R)",
@@ -1020,13 +1020,13 @@ class ImageLabelTool:
         return self.session_indices.get(session_id, None)
 
     def label_shortcut_q(self, event=None):
-        """Keyboard shortcut: Q for 'no code'"""
+        """Keyboard shortcut: Q for 'no label'"""
         if self.image_paths:
             # Check if current image was unclassified before setting new label
             current_path = self.image_paths[self.current_index]
             was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
             
-            self.label_var.set("no code")
+            self.label_var.set("no label")
             self.set_label_radio()
             
             # Only jump to next unclassified if this image was previously unclassified
@@ -1241,7 +1241,7 @@ class ImageLabelTool:
         print(f"DEBUG: Using Net Stats logic:")
         print(f"  - Total entered: {total_entered}")
         print(f"  - Actual sessions found: {actual_sessions}")
-        print(f"  - Sessions no code: {sessions_no_code}")
+        print(f"  - Sessions no label: {sessions_no_code}")
         print(f"  - Sessions read failure: {sessions_read_failure}")
         print(f"  - Sessions unreadable code: {sessions_unreadable_code}")
         print(f"  - Total readable: {total_readable}")
@@ -1250,7 +1250,7 @@ class ImageLabelTool:
         # Build result dictionary
         session_stats = {}
         if sessions_no_code > 0:
-            session_stats["Sessions with No Code"] = sessions_no_code
+            session_stats["Sessions with no label"] = sessions_no_code
         if sessions_read_failure > 0:
             session_stats["Sessions with Read Failure"] = sessions_read_failure
         if sessions_unreadable_code > 0:
@@ -1293,7 +1293,7 @@ class ImageLabelTool:
         
         # Define colors for different statuses
         color_map = {
-            "Sessions with No Code": "#FF5722",          # Deep Orange/Red
+            "Sessions with no label": "#FF5722",          # Deep Orange/Red
             "Sessions with Read Failure": "#F44336",     # Red
             "Sessions with Unreadable Code": "#FF9800",  # Orange
             "Sessions with Successful Reads": "#4CAF50"  # Green
@@ -1579,7 +1579,7 @@ class ImageLabelTool:
             fail_reading_parcels = 0
             
         output.append(f"Number of Fail reading parcels: {fail_reading_parcels}")
-        output.append(f"Number of No-code: {analysis_data['no_code_count']}")
+        output.append(f"Number of No-label: {analysis_data['no_code_count']}")
         output.append(f"Number of Read-failure: {analysis_data['read_failure_count']}")
         
         # Calculate total unreadable
@@ -3145,7 +3145,7 @@ class ImageLabelTool:
         # Format the display
         lines = [
             f"Number of sessions: {total_sessions}",
-            f"Sessions with no code: {sessions_no_code}",
+            f"Sessions with no label: {sessions_no_code}",
             f"Sessions with read failure: {sessions_read_failure}",
             f"Sessions with unreadable code: {sessions_unreadable_code}",
             f"Total readable sessions: {total_readable}"
