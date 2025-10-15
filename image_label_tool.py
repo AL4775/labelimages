@@ -28,7 +28,7 @@ except ImportError:
     sns = None
 
 # Application version
-VERSION = "1.2.5"
+VERSION = "1.2.7"
 
 LABELS = ["(Unclassified)", "no code", "read failure", "occluded", "image quality", "damaged", "other"]
 
@@ -71,9 +71,9 @@ class ImageLabelTool:
         # Track previously seen files for new file detection
         self.previously_seen_files = set()
         
-        # Parcel index tracking
-        self.parcel_indices = {}  # Maps parcel_id to parcel_index
-        self.next_parcel_index = 1  # Next index to assign to a newly classified parcel
+        # Session index tracking
+        self.session_indices = {}  # Maps session_id to session_index
+        self.next_session_index = 1  # Next index to assign to a newly classified session
         
         # Set up logging for barcode detection
         self.setup_logging()
@@ -140,7 +140,7 @@ class ImageLabelTool:
         main_frame = tk.Frame(self.root, bg="#FAFAFA", padx=8, pady=8)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Top section: Folder selection and total parcels
+        # Top section: Folder selection and total sessions
         top_frame = tk.Frame(main_frame, bg="#FAFAFA")
         top_frame.pack(fill=tk.X, pady=(0, 10))
         
@@ -157,15 +157,15 @@ class ImageLabelTool:
                                          wraplength=600, justify=tk.LEFT, anchor="w")
         self.folder_path_label.pack(side=tk.LEFT, padx=(10, 0), fill=tk.X, expand=True)
         
-        # Total number of parcels input (right side)
+        # Total number of sessions input (right side)
         total_frame = tk.Frame(top_frame, bg="#FAFAFA")
         total_frame.pack(side=tk.RIGHT)
-        tk.Label(total_frame, text="Total number of parcels:", bg="#FAFAFA", font=("Arial", 11)).pack(side=tk.LEFT)
-        self.total_parcels_var = tk.StringVar()
-        self.total_parcels_entry = tk.Entry(total_frame, textvariable=self.total_parcels_var, width=8,
+        tk.Label(total_frame, text="Total number of sessions:", bg="#FAFAFA", font=("Arial", 11)).pack(side=tk.LEFT)
+        self.total_sessions_var = tk.StringVar()
+        self.total_sessions_entry = tk.Entry(total_frame, textvariable=self.total_sessions_var, width=8,
                                           font=("Arial", 11), bg="white", relief="solid", bd=1)
-        self.total_parcels_entry.pack(side=tk.LEFT, padx=(5, 0))
-        self.total_parcels_entry.bind('<KeyRelease>', self.on_total_changed)
+        self.total_sessions_entry.pack(side=tk.LEFT, padx=(5, 0))
+        self.total_sessions_entry.bind('<KeyRelease>', self.on_total_changed)
         
         # Filter dropdown (center)
         filter_frame = tk.Frame(top_frame, bg="#FAFAFA")
@@ -272,11 +272,11 @@ class ImageLabelTool:
                              font=("Arial", 12), fg="#424242")  # Smaller font
         self.status.pack(pady=(5, 2))  # Reduced from (10, 5) to (5, 2)
         
-        # Add parcel index display - reduced spacing
-        self.parcel_index_var = tk.StringVar()
-        self.parcel_index_label = tk.Label(center_panel, textvariable=self.parcel_index_var, bg="#FAFAFA",
+        # Add session index display - reduced spacing
+        self.session_index_var = tk.StringVar()
+        self.session_index_label = tk.Label(center_panel, textvariable=self.session_index_var, bg="#FAFAFA",
                                          font=("Arial", 12), fg="#424242")  # Smaller font
-        self.parcel_index_label.pack(pady=(0, 2))  # Reduced from (0, 5) to (0, 2)
+        self.session_index_label.pack(pady=(0, 2))  # Reduced from (0, 5) to (0, 2)
 
         # Navigation and radio buttons for labels (below image) - compact spacing
         self.label_var = tk.StringVar(value=LABELS[0])
@@ -417,37 +417,37 @@ class ImageLabelTool:
         self.warning_message_label.pack(pady=(5, 10), fill=tk.X)
         self.warning_message_label.pack_forget()  # Initially hidden
         
-        # Parcel statistics section
-        parcel_section = tk.Frame(analysis_tab, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
-        parcel_section.pack(fill=tk.X, pady=(0, 6))
+        # Session statistics section
+        session_section = tk.Frame(analysis_tab, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
+        session_section.pack(fill=tk.X, pady=(0, 6))
         
-        tk.Label(parcel_section, text="Parcel count", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#81C784").pack()
-        self.parcel_count_var = tk.StringVar()
-        self.parcel_count_label = tk.Label(parcel_section, textvariable=self.parcel_count_var, 
+        tk.Label(session_section, text="Session count", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#81C784").pack()
+        self.session_count_var = tk.StringVar()
+        self.session_count_label = tk.Label(session_section, textvariable=self.session_count_var, 
                                          font=("Arial", 13), bg="#F5F5F5", fg="#424242", wraplength=300,
                                          justify=tk.LEFT, anchor="w")
-        self.parcel_count_label.pack(pady=(3, 0), fill=tk.X)
+        self.session_count_label.pack(pady=(3, 0), fill=tk.X)
         
         # Total statistics section
         total_section = tk.Frame(analysis_tab, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
         total_section.pack(fill=tk.X, pady=(0, 6))
         
         tk.Label(total_section, text="Net Stats", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#5E88D8").pack()
-        self.parcel_stats_var = tk.StringVar()
-        self.parcel_stats_label = tk.Label(total_section, textvariable=self.parcel_stats_var, 
+        self.session_stats_var = tk.StringVar()
+        self.session_stats_label = tk.Label(total_section, textvariable=self.session_stats_var, 
                                          font=("Arial", 13), fg="#424242", bg="#F5F5F5", wraplength=300,
                                          justify=tk.LEFT, anchor="w")
-        self.parcel_stats_label.pack(pady=(3, 0), fill=tk.X)
+        self.session_stats_label.pack(pady=(3, 0), fill=tk.X)
 
-        # Pie chart button for parcel statistics
+        # Pie chart button for session statistics
         pie_chart_frame = tk.Frame(analysis_tab, bg="#FAFAFA")
         pie_chart_frame.pack(fill=tk.X, pady=(5, 10))
         
-        self.btn_parcel_pie_chart = tk.Button(pie_chart_frame, text="📊 Show Parcel Pie Chart", 
-                                            command=self.show_parcel_pie_chart,
+        self.btn_session_pie_chart = tk.Button(pie_chart_frame, text="📊 Show Session Pie Chart", 
+                                            command=self.show_session_pie_chart,
                                             bg="#4CAF50", fg="white", font=("Arial", 11, "bold"),
                                             relief="raised", bd=2, padx=10, pady=5)
-        self.btn_parcel_pie_chart.pack(anchor="center")
+        self.btn_session_pie_chart.pack(anchor="center")
 
         # === TAB 3: Log File Analysis ===
         log_file_tab = tk.Frame(stats_notebook, bg="#FAFAFA")
@@ -722,7 +722,7 @@ class ImageLabelTool:
         self.previously_seen_files = set(self.all_image_paths)
         
         self.load_csv()  # Try to load existing CSV if any
-        self.auto_detect_total_groups()  # Auto-detect total number of parcels from filenames
+        self.auto_detect_total_groups()  # Auto-detect total number of sessions from filenames
         self.apply_filter()  # Apply current filter to show appropriate images
         
         # Update warning message and navigation buttons
@@ -865,7 +865,7 @@ class ImageLabelTool:
         # Update progress and label status
         self.update_progress_display()
         self.update_current_label_status()
-        self.update_parcel_index_display()
+        self.update_session_index_display()
         
         # Update navigation buttons
         self.update_navigation_buttons()
@@ -936,17 +936,17 @@ class ImageLabelTool:
             return
         path = self.image_paths[self.current_index]
         
-        # Assign parcel index if this is the first classification for this parcel
-        self.assign_parcel_index_if_needed(path)
+        # Assign session index if this is the first classification for this session
+        self.assign_session_index_if_needed(path)
         
         self.labels[path] = self.label_var.get()
         self.save_csv()
         self.update_counts()
-        self.update_parcel_stats()
+        self.update_session_stats()
         self.update_total_stats()
         self.update_progress_display()
         self.update_current_label_status()
-        self.update_parcel_index_display()
+        self.update_session_index_display()
         
         # Set image to fit-to-window mode after classification
         if self.scale_1to1:
@@ -989,35 +989,35 @@ class ImageLabelTool:
                 
                 self.show_image()
 
-    def assign_parcel_index_if_needed(self, image_path):
-        """Assign a parcel index to a parcel when it gets its first classification"""
-        parcel_id = self.get_parcel_number(image_path)
-        if not parcel_id:
-            return  # No parcel ID, can't assign index
+    def assign_session_index_if_needed(self, image_path):
+        """Assign a session index to a session when it gets its first classification"""
+        session_id = self.get_session_number(image_path)
+        if not session_id:
+            return  # No session ID, can't assign index
             
-        # Check if this parcel already has an index
-        if parcel_id in self.parcel_indices:
+        # Check if this session already has an index
+        if session_id in self.session_indices:
             return  # Already has an index
             
-        # Check if this parcel has any classified images (other than the current one being set)
-        parcel_has_classified_images = False
+        # Check if this session has any classified images (other than the current one being set)
+        session_has_classified_images = False
         for path in self.all_image_paths:
-            if self.get_parcel_number(path) == parcel_id and path != image_path:
+            if self.get_session_number(path) == session_id and path != image_path:
                 if path in self.labels and self.labels[path] != "(Unclassified)":
-                    parcel_has_classified_images = True
+                    session_has_classified_images = True
                     break
         
-        # If this is the first classification for this parcel, assign an index
-        if not parcel_has_classified_images:
-            self.parcel_indices[parcel_id] = self.next_parcel_index
-            self.next_parcel_index += 1
+        # If this is the first classification for this session, assign an index
+        if not session_has_classified_images:
+            self.session_indices[session_id] = self.next_session_index
+            self.next_session_index += 1
 
-    def get_parcel_index(self, image_path):
-        """Get the parcel index for an image, or None if parcel is unclassified"""
-        parcel_id = self.get_parcel_number(image_path)
-        if not parcel_id:
+    def get_session_index(self, image_path):
+        """Get the session index for an image, or None if session is unclassified"""
+        session_id = self.get_session_number(image_path)
+        if not session_id:
             return None
-        return self.parcel_indices.get(parcel_id, None)
+        return self.session_indices.get(session_id, None)
 
     def label_shortcut_q(self, event=None):
         """Keyboard shortcut: Q for 'no code'"""
@@ -1137,9 +1137,9 @@ class ImageLabelTool:
                 self.show_image()
 
     def on_total_changed(self, event=None):
-        """Called when the total parcels field changes"""
+        """Called when the total sessions field changes"""
         self.update_total_stats()
-        # Trigger CSV and stats refresh when total parcels changes
+        # Trigger CSV and stats refresh when total sessions changes
         self.save_csv()
 
     def on_filter_changed(self, value=None):
@@ -1147,8 +1147,8 @@ class ImageLabelTool:
         self.apply_filter()
         self.update_filter_button_state()
 
-    def show_parcel_pie_chart(self):
-        """Display a modal dialog with pie chart for parcel statistics"""
+    def show_session_pie_chart(self):
+        """Display a modal dialog with pie chart for session statistics"""
         if not HAS_MATPLOTLIB:
             messagebox.showwarning("Charts Unavailable", 
                                  "Chart functionality is not available.\n"
@@ -1160,15 +1160,15 @@ class ImageLabelTool:
             messagebox.showwarning("No Data", "Please select a folder with images first.")
             return
         
-        # Calculate parcel statistics
-        parcel_data = self.calculate_parcel_stats_for_chart()
-        if not parcel_data:
-            messagebox.showinfo("No Data", "No classified parcels found to display in pie chart.")
+        # Calculate session statistics
+        session_data = self.calculate_session_stats_for_chart()
+        if not session_data:
+            messagebox.showinfo("No Data", "No classified sessions found to display in pie chart.")
             return
         
         # Create modal dialog
         pie_dialog = tk.Toplevel(self.root)
-        pie_dialog.title(f"Parcel Statistics Pie Chart - Zebra FIS Analytics INTERNAL v{VERSION}")
+        pie_dialog.title(f"Session Statistics Pie Chart - Zebra FIS Analytics INTERNAL v{VERSION}")
         pie_dialog.geometry("800x650")
         pie_dialog.configure(bg="#FAFAFA")
         pie_dialog.transient(self.root)  # Make it modal
@@ -1178,7 +1178,7 @@ class ImageLabelTool:
         pie_dialog.geometry("+%d+%d" % (self.root.winfo_rootx() + 50, self.root.winfo_rooty() + 50))
         
         # Create the pie chart and store references for cleanup
-        chart_canvas, chart_figure = self.create_parcel_pie_chart_in_dialog(pie_dialog, parcel_data)
+        chart_canvas, chart_figure = self.create_session_pie_chart_in_dialog(pie_dialog, session_data)
         
         # Function to properly close the dialog and cleanup matplotlib resources
         def close_pie_dialog():
@@ -1203,67 +1203,67 @@ class ImageLabelTool:
         # Also bind the window close event to our cleanup function
         pie_dialog.protocol("WM_DELETE_WINDOW", close_pie_dialog)
 
-    def calculate_parcel_stats_for_chart(self):
-        """Calculate parcel statistics for pie chart display using the same logic as Net Stats"""
+    def calculate_session_stats_for_chart(self):
+        """Calculate session statistics for pie chart display using the same logic as Net Stats"""
         # Get the total number from the UI field
         try:
-            total_entered = int(self.total_parcels_var.get()) if self.total_parcels_var.get() else 0
+            total_entered = int(self.total_sessions_var.get()) if self.total_sessions_var.get() else 0
         except ValueError:
-            messagebox.showwarning("Invalid Data", "Please enter a valid total number of parcels first.")
+            messagebox.showwarning("Invalid Data", "Please enter a valid total number of sessions first.")
             return {}
 
         if total_entered <= 0:
-            messagebox.showwarning("Invalid Data", "Total number of parcels must be greater than 0.")
+            messagebox.showwarning("Invalid Data", "Total number of sessions must be greater than 0.")
             return {}
 
-        # Get current parcel statistics using the same logic as the Net Stats
-        parcel_labels_dict = self.calculate_parcel_labels()
-        actual_parcels = len(parcel_labels_dict)
+        # Get current session statistics using the same logic as the Net Stats
+        session_labels_dict = self.calculate_session_labels()
+        actual_sessions = len(session_labels_dict)
         
-        parcels_no_code = 0
-        parcels_read_failure = 0
+        sessions_no_code = 0
+        sessions_read_failure = 0
         
-        for parcel_label in parcel_labels_dict.values():
-            if parcel_label == "no code":
-                parcels_no_code += 1
-            elif parcel_label == "read failure":
-                parcels_read_failure += 1
+        for session_label in session_labels_dict.values():
+            if session_label == "no code":
+                sessions_no_code += 1
+            elif session_label == "read failure":
+                sessions_read_failure += 1
         
-        # Calculate parcels with unreadable code
-        parcels_unreadable_code = actual_parcels - parcels_no_code - parcels_read_failure
+        # Calculate sessions with unreadable code
+        sessions_unreadable_code = actual_sessions - sessions_no_code - sessions_read_failure
         
-        # Calculate readable parcels using the same formula as Net Stats
-        total_readable = total_entered - actual_parcels + parcels_read_failure
+        # Calculate readable sessions using the same formula as Net Stats
+        total_readable = total_entered - actual_sessions + sessions_read_failure
         
         # Calculate successful reads
-        parcels_successful_reads = total_readable - parcels_read_failure
+        sessions_successful_reads = total_readable - sessions_read_failure
         
         print(f"DEBUG: Using Net Stats logic:")
         print(f"  - Total entered: {total_entered}")
-        print(f"  - Actual parcels found: {actual_parcels}")
-        print(f"  - Parcels no code: {parcels_no_code}")
-        print(f"  - Parcels read failure: {parcels_read_failure}")
-        print(f"  - Parcels unreadable code: {parcels_unreadable_code}")
+        print(f"  - Actual sessions found: {actual_sessions}")
+        print(f"  - Sessions no code: {sessions_no_code}")
+        print(f"  - Sessions read failure: {sessions_read_failure}")
+        print(f"  - Sessions unreadable code: {sessions_unreadable_code}")
         print(f"  - Total readable: {total_readable}")
-        print(f"  - Successful reads: {parcels_successful_reads}")
+        print(f"  - Successful reads: {sessions_successful_reads}")
         
         # Build result dictionary
-        parcel_stats = {}
-        if parcels_no_code > 0:
-            parcel_stats["Parcels with No Code"] = parcels_no_code
-        if parcels_read_failure > 0:
-            parcel_stats["Parcels with Read Failure"] = parcels_read_failure
-        if parcels_unreadable_code > 0:
-            parcel_stats["Parcels with Unreadable Code"] = parcels_unreadable_code
-        if parcels_successful_reads > 0:
-            parcel_stats["Parcels with Successful Reads"] = parcels_successful_reads
+        session_stats = {}
+        if sessions_no_code > 0:
+            session_stats["Sessions with No Code"] = sessions_no_code
+        if sessions_read_failure > 0:
+            session_stats["Sessions with Read Failure"] = sessions_read_failure
+        if sessions_unreadable_code > 0:
+            session_stats["Sessions with Unreadable Code"] = sessions_unreadable_code
+        if sessions_successful_reads > 0:
+            session_stats["Sessions with Successful Reads"] = sessions_successful_reads
         
-        print(f"DEBUG: Final pie chart data: {parcel_stats}")
+        print(f"DEBUG: Final pie chart data: {session_stats}")
         
-        return parcel_stats
+        return session_stats
 
-    def create_parcel_pie_chart_in_dialog(self, parent, parcel_data):
-        """Create a pie chart showing parcel statistics in the given parent widget"""
+    def create_session_pie_chart_in_dialog(self, parent, session_data):
+        """Create a pie chart showing session statistics in the given parent widget"""
         if not HAS_MATPLOTLIB:
             return None, None
         
@@ -1275,17 +1275,17 @@ class ImageLabelTool:
         fig.patch.set_facecolor('#FAFAFA')
         
         # Prepare data
-        labels = list(parcel_data.keys())
-        sizes = list(parcel_data.values())
+        labels = list(session_data.keys())
+        sizes = list(session_data.values())
         
         # Convert labels to multi-line format for better fit
         formatted_labels = []
         for label in labels:
-            if "Parcels with" in label:
-                # Split "Parcels with X" into two lines
+            if "Sessions with" in label:
+                # Split "Sessions with X" into two lines
                 parts = label.split(" with ")
                 if len(parts) == 2:
-                    formatted_labels.append(f"Parcels with\n{parts[1]}")
+                    formatted_labels.append(f"Sessions with\n{parts[1]}")
                 else:
                     formatted_labels.append(label)
             else:
@@ -1293,10 +1293,10 @@ class ImageLabelTool:
         
         # Define colors for different statuses
         color_map = {
-            "Parcels with No Code": "#FF5722",          # Deep Orange/Red
-            "Parcels with Read Failure": "#F44336",     # Red
-            "Parcels with Unreadable Code": "#FF9800",  # Orange
-            "Parcels with Successful Reads": "#4CAF50"  # Green
+            "Sessions with No Code": "#FF5722",          # Deep Orange/Red
+            "Sessions with Read Failure": "#F44336",     # Red
+            "Sessions with Unreadable Code": "#FF9800",  # Orange
+            "Sessions with Successful Reads": "#4CAF50"  # Green
         }
         
         colors = [color_map.get(label, "#9E9E9E") for label in labels]
@@ -1315,7 +1315,7 @@ class ImageLabelTool:
             text.set_fontweight('bold')
             text.set_fontsize(9)
         
-        ax.set_title('Parcel Classification Status Distribution', fontsize=14, fontweight='bold', pad=20)
+        ax.set_title('Session Classification Status Distribution', fontsize=14, fontweight='bold', pad=20)
         
         # Equal aspect ratio ensures that pie is drawn as a circle
         ax.axis('equal')
@@ -1484,11 +1484,11 @@ class ImageLabelTool:
                             timeout_ids.append(id_val)
                         break
         
-        # Calculate effective parcel count
+        # Calculate effective session count
         # Effective count = unique IDs - false triggers - timeouts
-        effective_parcel_count = len(unique_ids) - false_triggers - timeouts
-        if effective_parcel_count < 0:
-            effective_parcel_count = 0
+        effective_session_count = len(unique_ids) - false_triggers - timeouts
+        if effective_session_count < 0:
+            effective_session_count = 0
         
         return {
             'total_entries': total_entries,
@@ -1497,7 +1497,7 @@ class ImageLabelTool:
             'false_triggers': false_triggers,
             'timeouts': timeouts,
             'total_noread': total_noread,
-            'effective_parcel_count': effective_parcel_count,
+            'effective_session_count': effective_session_count,
             'missed_trigger_ids': missed_trigger_ids,
             'timeout_ids': timeout_ids
         }
@@ -1510,10 +1510,25 @@ class ImageLabelTool:
         # Store results for potential export
         self.current_log_analysis = results
         
+        # Auto-update "Total number of sessions" field with effective session count
+        effective_session_count = results.get('effective_session_count', 0)
+        if effective_session_count > 0:
+            # Update the total sessions field
+            self.total_sessions_var.set(str(effective_session_count))
+            
+            # Refresh all statistics and analysis
+            self.update_session_stats()
+            self.update_total_stats()
+            self.update_progress_display()
+            self.update_counts()
+            
+            # Save the updated CSV with the new total
+            self.save_csv()
+        
         # Extract start/end dates from log file if available
         log_date_info = self.extract_log_date_range()
         
-        # Get analysis data from current classifications
+        # Get updated analysis data after the total parcels change
         analysis_data = self.get_analysis_data()
         
         # Format and display results in the requested structure
@@ -1543,15 +1558,15 @@ class ImageLabelTool:
         output.append("=== LOG FILE ANALYSIS ===")
         output.append(f"Number of unique IDs: {results['unique_ids']}")
         
-        # Calculate read vs noread parcels
+        # Calculate read vs noread sessions
         total_noread = results.get('total_noread', 0)
         unique_ids = results['unique_ids']
-        read_parcels = unique_ids - total_noread
+        read_sessions = unique_ids - total_noread
         
-        output.append(f"Number of Read parcels: {read_parcels}")
-        output.append(f"Number of NOREAD parcels: {total_noread}")
+        output.append(f"Number of Read sessions: {read_sessions}")
+        output.append(f"Number of NOREAD sessions: {total_noread}")
         output.append(f"Number of False triggers: {results['false_triggers']}")
-        output.append(f"Number of Effective IDs: {results['effective_parcel_count']}")
+        output.append(f"Number of Effective IDs: {results['effective_session_count']}")
         
         output.append("")  # Empty line
         
@@ -1790,26 +1805,26 @@ class ImageLabelTool:
     def get_analysis_data(self):
         """Get analysis data from current image classifications"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
-            return {'no_code_count': 0, 'read_failure_count': 0, 'total_parcels': 0, 'actual_parcels': 0, 'total_entered': 0}
+            return {'no_code_count': 0, 'read_failure_count': 0, 'total_sessions': 0, 'actual_sessions': 0, 'total_entered': 0}
             
-        # Calculate parcel labels
-        parcel_labels_dict = self.calculate_parcel_labels()
+        # Calculate session labels
+        session_labels_dict = self.calculate_session_labels()
         
-        # Count parcels by category
-        no_code_count = sum(1 for label in parcel_labels_dict.values() if label == "no code")
-        read_failure_count = sum(1 for label in parcel_labels_dict.values() if label == "read failure")
+        # Count sessions by category
+        no_code_count = sum(1 for label in session_labels_dict.values() if label == "no code")
+        read_failure_count = sum(1 for label in session_labels_dict.values() if label == "read failure")
         
-        # Get actual parcels count (number of parcels found in images)
-        actual_parcels = len(parcel_labels_dict)
+        # Get actual sessions count (number of sessions found in images)
+        actual_sessions = len(session_labels_dict)
         
         # Get total entered (expected total from user input)
-        total_entered = int(self.total_parcels_var.get()) if self.total_parcels_var.get() else 0
+        total_entered = int(self.total_sessions_var.get()) if self.total_sessions_var.get() else 0
         
         return {
             'no_code_count': no_code_count,
             'read_failure_count': read_failure_count,
-            'total_parcels': len(parcel_labels_dict),
-            'actual_parcels': actual_parcels,
+            'total_sessions': len(session_labels_dict),
+            'actual_sessions': actual_sessions,
             'total_entered': total_entered
         }
     
@@ -1897,15 +1912,15 @@ class ImageLabelTool:
             report_lines.append("-" * 20)
             report_lines.append(f"Number of unique IDs: {results['unique_ids']}")
             
-            # Calculate read vs noread parcels
+            # Calculate read vs noread sessions
             total_noread = results.get('total_noread', 0)
             unique_ids = results['unique_ids']
-            read_parcels = unique_ids - total_noread
+            read_sessions = unique_ids - total_noread
             
-            report_lines.append(f"Number of Read parcels: {read_parcels}")
-            report_lines.append(f"Number of NOREAD parcels: {total_noread}")
+            report_lines.append(f"Number of Read sessions: {read_sessions}")
+            report_lines.append(f"Number of NOREAD sessions: {total_noread}")
             report_lines.append(f"Number of False triggers: {results['false_triggers']}")
-            report_lines.append(f"Number of Effective IDs: {results['effective_parcel_count']}")
+            report_lines.append(f"Number of Effective IDs: {results['effective_session_count']}")
             
             report_lines.append("")
             
@@ -2057,11 +2072,11 @@ class ImageLabelTool:
         self.current_index = 0
         self.show_image()
         self.update_counts()
-        self.update_parcel_stats()
+        self.update_session_stats()
         self.update_total_stats()
         self.update_progress_display()
         if self.image_paths:  # Only update if there are images loaded
-            self.update_parcel_index_display()
+            self.update_session_index_display()
         
         # Update navigation buttons
         self.update_navigation_buttons()
@@ -2100,8 +2115,8 @@ class ImageLabelTool:
         self._load_csv_file(self.csv_filename)
 
     def _load_csv_file(self, filepath):
-        """Helper method to load CSV file and restore parcel indices"""
-        max_parcel_index = 0
+        """Helper method to load CSV file and restore session indices"""
+        max_session_index = 0
         
         with open(filepath, newline='', encoding='utf-8') as f:
             reader = csv.reader(f)
@@ -2128,19 +2143,19 @@ class ImageLabelTool:
                     
                     self.labels[image_path] = image_label
                     
-                    # If parcel_index column exists and has a value, restore the parcel index
-                    if len(row) >= 5 and row[4]:  # parcel_index is 5th column (index 4)
+                    # If session_index column exists and has a value, restore the session index
+                    if len(row) >= 5 and row[4]:  # session_index is 5th column (index 4)
                         try:
-                            parcel_index = int(row[4])
-                            parcel_id = self.get_parcel_number(image_path)
-                            if parcel_id:
-                                self.parcel_indices[parcel_id] = parcel_index
-                                max_parcel_index = max(max_parcel_index, parcel_index)
+                            session_index = int(row[4])
+                            session_id = self.get_session_number(image_path)
+                            if session_id:
+                                self.session_indices[session_id] = session_index
+                                max_session_index = max(max_session_index, session_index)
                         except (ValueError, TypeError):
-                            pass  # Skip invalid parcel index values
+                            pass  # Skip invalid session index values
         
-        # Set next_parcel_index to be one more than the highest existing index
-        self.next_parcel_index = max_parcel_index + 1
+        # Set next_session_index to be one more than the highest existing index
+        self.next_session_index = max_session_index + 1
 
     def save_csv(self):
         if not self.csv_filename:
@@ -2150,10 +2165,10 @@ class ImageLabelTool:
             with open(self.csv_filename, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 # Write header
-                writer.writerow(['image_path', 'image_label', 'parcel_number', 'parcel_label', 'parcel_index'])
+                writer.writerow(['image_path', 'image_label', 'session_number', 'session_label', 'session_index'])
                 
-                # Calculate current parcel labels
-                parcel_labels_dict = self.calculate_parcel_labels()
+                # Calculate current session labels
+                session_labels_dict = self.calculate_session_labels()
                 
                 for path, label in self.labels.items():
                     # Convert absolute path to relative path from the selected folder
@@ -2169,10 +2184,10 @@ class ImageLabelTool:
                     else:
                         relative_path = os.path.basename(path)
                     
-                    parcel_id = self.get_parcel_number(path)
-                    parcel_label = parcel_labels_dict.get(parcel_id, "no code") if parcel_id else "no code"
-                    parcel_index = self.get_parcel_index(path)
-                    writer.writerow([relative_path, label, parcel_id or "", parcel_label, parcel_index or ""])
+                    session_id = self.get_session_number(path)
+                    session_label = session_labels_dict.get(session_id, "no code") if session_id else "no code"
+                    session_index = self.get_session_index(path)
+                    writer.writerow([relative_path, label, session_id or "", session_label, session_index or ""])
             
             # Also generate statistics CSV file
             self.save_stats_csv()
@@ -2265,7 +2280,7 @@ class ImageLabelTool:
         """Calculate comprehensive statistics for the stats CSV"""
         stats = {
             'Image_Counts': {},
-            'Parcel_Counts': {},
+            'Session_Counts': {},
             'Progress_Stats': {},
             'System_Info': {}
         }
@@ -2296,50 +2311,50 @@ class ImageLabelTool:
             'description': 'Total number of images in dataset'
         }
         
-        # Calculate parcel statistics
-        parcel_labels_dict = self.calculate_parcel_labels()
-        parcel_counts = {}
-        unique_parcels = set()
+        # Calculate session statistics
+        session_labels_dict = self.calculate_session_labels()
+        session_counts = {}
+        unique_sessions = set()
         
         for path in self.all_image_paths if hasattr(self, 'all_image_paths') else []:
-            parcel_id = self.get_parcel_number(path)
-            if parcel_id:
-                unique_parcels.add(parcel_id)
-                parcel_label = parcel_labels_dict.get(parcel_id, "no code")
-                parcel_counts[parcel_label] = parcel_counts.get(parcel_label, 0) + 1
+            session_id = self.get_session_number(path)
+            if session_id:
+                unique_sessions.add(session_id)
+                session_label = session_labels_dict.get(session_id, "no code")
+                session_counts[session_label] = session_counts.get(session_label, 0) + 1
         
-        # Store parcel statistics
-        for label, count in parcel_counts.items():
-            stats['Parcel_Counts'][f'parcels_{label}'] = {
+        # Store session statistics
+        for label, count in session_counts.items():
+            stats['Session_Counts'][f'sessions_{label}'] = {
                 'value': count,
-                'description': f'Number of parcels classified as {label}'
+                'description': f'Number of sessions classified as {label}'
             }
         
-        stats['Parcel_Counts']['total_unique_parcels'] = {
-            'value': len(unique_parcels),
-            'description': 'Total number of unique parcels'
+        stats['Session_Counts']['total_unique_sessions'] = {
+            'value': len(unique_sessions),
+            'description': 'Total number of unique sessions'
         }
         
-        # Add total number of parcels (including duplicates/all parcel entries)
-        total_parcel_entries = 0
+        # Add total number of sessions (including duplicates/all session entries)
+        total_session_entries = 0
         for path in self.all_image_paths if hasattr(self, 'all_image_paths') else []:
-            if self.get_parcel_number(path):
-                total_parcel_entries += 1
+            if self.get_session_number(path):
+                total_session_entries += 1
         
-        stats['Parcel_Counts']['total_parcel_entries'] = {
-            'value': total_parcel_entries,
-            'description': 'Total number of parcel entries (including duplicates)'
+        stats['Session_Counts']['total_session_entries'] = {
+            'value': total_session_entries,
+            'description': 'Total number of session entries (including duplicates)'
         }
         
-        # Add manually entered total number of parcels
+        # Add manually entered total number of sessions
         try:
-            manual_total_parcels = int(self.total_parcels_var.get()) if hasattr(self, 'total_parcels_var') and self.total_parcels_var.get() else 0
+            manual_total_sessions = int(self.total_sessions_var.get()) if hasattr(self, 'total_sessions_var') and self.total_sessions_var.get() else 0
         except ValueError:
-            manual_total_parcels = 0
+            manual_total_sessions = 0
             
-        stats['Parcel_Counts']['manual_total_parcels'] = {
-            'value': manual_total_parcels,
-            'description': 'Manually entered total number of parcels'
+        stats['Session_Counts']['manual_total_sessions'] = {
+            'value': manual_total_sessions,
+            'description': 'Manually entered total number of sessions'
         }
         
         # Calculate progress statistics
@@ -2680,24 +2695,24 @@ class ImageLabelTool:
         except:
             plt.style.use('default')
         
-        # Calculate parcel statistics
-        parcel_labels_dict = self.calculate_parcel_labels()
+        # Calculate session statistics
+        session_labels_dict = self.calculate_session_labels()
         
-        if not parcel_labels_dict:
-            # Show message if no parcel data
-            label = tk.Label(parent_frame, text="📦 No parcel data available\nPlease classify some images first.",
+        if not session_labels_dict:
+            # Show message if no session data
+            label = tk.Label(parent_frame, text="📦 No session data available\nPlease classify some images first.",
                            font=("Arial", 14), bg="#FAFAFA", fg="#666666")
             label.pack(expand=True)
             return
         
-        # Count parcels by label
-        parcel_counts = {}
-        for parcel_label in parcel_labels_dict.values():
-            parcel_counts[parcel_label] = parcel_counts.get(parcel_label, 0) + 1
+        # Count sessions by label
+        session_counts = {}
+        for session_label in session_labels_dict.values():
+            session_counts[session_label] = session_counts.get(session_label, 0) + 1
         
         # Prepare data for pie chart
-        labels = list(parcel_counts.keys())
-        sizes = list(parcel_counts.values())
+        labels = list(session_counts.keys())
+        sizes = list(session_counts.values())
         
         # Define attractive colors
         colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF']
@@ -2859,20 +2874,20 @@ class ImageLabelTool:
                 
             ax1.set_title('Classification Progress', fontweight='bold', fontsize=12)
         
-        # 2. Read Rate Bars (if total parcels is set)
+        # 2. Read Rate Bars (if total sessions is set)
         try:
-            total_entered = int(self.total_parcels_var.get()) if self.total_parcels_var.get() else 0
+            total_entered = int(self.total_sessions_var.get()) if self.total_sessions_var.get() else 0
             if total_entered > 0:
-                parcel_labels_dict = self.calculate_parcel_labels()
-                actual_parcels = len(parcel_labels_dict)
+                session_labels_dict = self.calculate_session_labels()
+                actual_sessions = len(session_labels_dict)
                 
-                parcels_no_code = sum(1 for label in parcel_labels_dict.values() if label == "no code")
-                parcels_read_failure = sum(1 for label in parcel_labels_dict.values() if label == "read failure")
+                sessions_no_code = sum(1 for label in session_labels_dict.values() if label == "no code")
+                sessions_read_failure = sum(1 for label in session_labels_dict.values() if label == "read failure")
                 
-                total_readable = total_entered - actual_parcels + parcels_read_failure
+                total_readable = total_entered - actual_sessions + sessions_read_failure
                 
                 # Calculate rates
-                gross_rate = ((total_entered - actual_parcels) / total_entered * 100) if total_entered > 0 else 0
+                gross_rate = ((total_entered - actual_sessions) / total_entered * 100) if total_entered > 0 else 0
                 net_rate = ((total_readable - parcels_read_failure) / total_readable * 100) if total_readable > 0 else 0
                 
                 rates = [gross_rate, net_rate]
@@ -3024,7 +3039,7 @@ class ImageLabelTool:
         else:
             self.parcel_index_var.set("Parcel Index: None")
 
-    def get_parcel_number(self, image_path):
+    def get_session_number(self, image_path):
         """Extract the group ID from filename using ID (first part) + Timestamp (last part)"""
         filename = os.path.basename(image_path)
         filename_without_ext = os.path.splitext(filename)[0]
@@ -3045,145 +3060,145 @@ class ImageLabelTool:
             # If no underscore, use the entire filename as identifier
             return filename_without_ext
 
-    def calculate_parcel_labels(self):
-        """Calculate parcel labels based on the labeling rules and return a dict"""
+    def calculate_session_labels(self):
+        """Calculate session labels based on the labeling rules and return a dict"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             return {}
 
         # Group images by their unique identifier (ID + Timestamp combination)
-        parcels = {}
+        sessions = {}
         for path in self.all_image_paths:
-            parcel_id = self.get_parcel_number(path)
-            if parcel_id:
-                if parcel_id not in parcels:
-                    parcels[parcel_id] = []
-                parcels[parcel_id].append(path)
+            session_id = self.get_session_number(path)
+            if session_id:
+                if session_id not in sessions:
+                    sessions[session_id] = []
+                sessions[session_id].append(path)
 
-        # Calculate parcel labels based on rules with new 7-category system
-        parcel_labels_dict = {}
+        # Calculate session labels based on rules with new 7-category system
+        session_labels_dict = {}
         
-        for parcel_id, parcel_paths in parcels.items():
-            parcel_image_labels = [self.labels.get(path, LABELS[0]) for path in parcel_paths]
+        for session_id, session_paths in sessions.items():
+            session_image_labels = [self.labels.get(path, LABELS[0]) for path in session_paths]
             
-            # Only include parcels that have at least one classified image
-            classified_labels = [label for label in parcel_image_labels if label != "(Unclassified)"]
+            # Only include sessions that have at least one classified image
+            classified_labels = [label for label in session_image_labels if label != "(Unclassified)"]
             
             if not classified_labels:
-                # Skip parcels with no classified images
+                # Skip sessions with no classified images
                 continue
             
-            # Apply parcel labeling rules in priority order:
-            # 1. If any image has "read failure", parcel is "read failure" (technical issue)
+            # Apply session labeling rules in priority order:
+            # 1. If any image has "read failure", session is "read failure" (technical issue)
             if "read failure" in classified_labels:
-                parcel_labels_dict[parcel_id] = "read failure"
-            # 2. If any image is "damaged", parcel is "damaged" (physical issue)
+                session_labels_dict[session_id] = "read failure"
+            # 2. If any image is "damaged", session is "damaged" (physical issue)
             elif "damaged" in classified_labels:
-                parcel_labels_dict[parcel_id] = "damaged"
-            # 3. If any image has "image quality" issues, parcel has "image quality" issues
+                session_labels_dict[session_id] = "damaged"
+            # 3. If any image has "image quality" issues, session has "image quality" issues
             elif "image quality" in classified_labels:
-                parcel_labels_dict[parcel_id] = "image quality"
-            # 4. If any image is "occluded", parcel is "occluded"
+                session_labels_dict[session_id] = "image quality"
+            # 4. If any image is "occluded", session is "occluded"
             elif "occluded" in classified_labels:
-                parcel_labels_dict[parcel_id] = "occluded"
-            # 5. If any image is "other", parcel is "other"
+                session_labels_dict[session_id] = "occluded"
+            # 5. If any image is "other", session is "other"
             elif "other" in classified_labels:
-                parcel_labels_dict[parcel_id] = "other"
-            # 6. If ALL classified images are "no code", parcel is "no code"
+                session_labels_dict[session_id] = "other"
+            # 6. If ALL classified images are "no code", session is "no code"
             elif all(label == "no code" for label in classified_labels):
-                parcel_labels_dict[parcel_id] = "no code"
-            # 7. Default: if mix of categories, parcel is "other"
+                session_labels_dict[session_id] = "no code"
+            # 7. Default: if mix of categories, session is "other"
             else:
-                parcel_labels_dict[parcel_id] = "other"
+                session_labels_dict[session_id] = "other"
                 
-        return parcel_labels_dict
+        return session_labels_dict
 
-    def update_parcel_stats(self):
-        """Calculate parcel statistics based on the labeling rules"""
+    def update_session_stats(self):
+        """Calculate session statistics based on the labeling rules"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
-            self.parcel_count_var.set("")
+            self.session_count_var.set("")
             return
 
-        parcel_labels_dict = self.calculate_parcel_labels()
+        session_labels_dict = self.calculate_session_labels()
         
-        # Count parcels by different categories
-        total_parcels = len(parcel_labels_dict)
-        parcels_no_code = 0
-        parcels_read_failure = 0
+        # Count sessions by different categories
+        total_sessions = len(session_labels_dict)
+        sessions_no_code = 0
+        sessions_read_failure = 0
         
-        for parcel_label in parcel_labels_dict.values():
-            if parcel_label == "no code":
-                parcels_no_code += 1
-            elif parcel_label == "read failure":
-                parcels_read_failure += 1
+        for session_label in session_labels_dict.values():
+            if session_label == "no code":
+                sessions_no_code += 1
+            elif session_label == "read failure":
+                sessions_read_failure += 1
         
-        # Calculate parcels with unreadable code
-        parcels_unreadable_code = total_parcels - parcels_no_code - parcels_read_failure
+        # Calculate sessions with unreadable code
+        sessions_unreadable_code = total_sessions - sessions_no_code - sessions_read_failure
         
-        # Calculate total readable parcels using expected total from text field
+        # Calculate total readable sessions using expected total from text field
         try:
-            total_entered = int(self.total_parcels_var.get()) if self.total_parcels_var.get() else 0
-            # Total readable = Total number of parcel - number of parcels + Parcels with read failure
-            total_readable = total_entered - total_parcels + parcels_read_failure
+            total_entered = int(self.total_sessions_var.get()) if self.total_sessions_var.get() else 0
+            # Total readable = Total number of session - number of sessions + Sessions with read failure
+            total_readable = total_entered - total_sessions + sessions_read_failure
         except ValueError:
             total_readable = "N/A (Enter expected total)"
         
         # Format the display
         lines = [
-            f"Number of parcels: {total_parcels}",
-            f"Parcels with no code: {parcels_no_code}",
-            f"Parcels with read failure: {parcels_read_failure}",
-            f"Parcels with unreadable code: {parcels_unreadable_code}",
-            f"Total readable parcels: {total_readable}"
+            f"Number of sessions: {total_sessions}",
+            f"Sessions with no code: {sessions_no_code}",
+            f"Sessions with read failure: {sessions_read_failure}",
+            f"Sessions with unreadable code: {sessions_unreadable_code}",
+            f"Total readable sessions: {total_readable}"
         ]
         
-        self.parcel_count_var.set("\n".join(lines))
+        self.session_count_var.set("\n".join(lines))
 
     def update_total_stats(self):
-        """Calculate statistics against manually entered total number of parcels"""
+        """Calculate statistics against manually entered total number of sessions"""
         try:
-            total_entered = int(self.total_parcels_var.get()) if self.total_parcels_var.get() else 0
+            total_entered = int(self.total_sessions_var.get()) if self.total_sessions_var.get() else 0
         except ValueError:
-            self.parcel_stats_var.set("")
+            self.session_stats_var.set("")
             return
 
         if total_entered <= 0:
-            self.parcel_stats_var.set("")
+            self.session_stats_var.set("")
             return
 
-        # Get current parcel statistics
-        parcel_labels_dict = self.calculate_parcel_labels()
-        actual_parcels = len(parcel_labels_dict)
+        # Get current session statistics
+        session_labels_dict = self.calculate_session_labels()
+        actual_sessions = len(session_labels_dict)
         
-        parcels_no_code = 0
-        parcels_read_failure = 0
+        sessions_no_code = 0
+        sessions_read_failure = 0
         
-        for parcel_label in parcel_labels_dict.values():
-            if parcel_label == "no code":
-                parcels_no_code += 1
-            elif parcel_label == "read failure":
-                parcels_read_failure += 1
+        for session_label in session_labels_dict.values():
+            if session_label == "no code":
+                sessions_no_code += 1
+            elif session_label == "read failure":
+                sessions_read_failure += 1
         
-        # Calculate readable parcels: Total number of parcel - number of parcels + Parcels with read failure
-        total_readable = total_entered - actual_parcels + parcels_read_failure
+        # Calculate readable sessions: Total number of session - number of sessions + Sessions with read failure
+        total_readable = total_entered - actual_sessions + sessions_read_failure
         
         lines = []
         
-        # Gross read rate: (Total number of parcels) minus (Number of parcels) out of (Total number of parcels)
+        # Gross read rate: (Total number of sessions) minus (Number of sessions) out of (Total number of sessions)
         if total_entered > 0:
-            gross_numerator = total_entered - actual_parcels
+            gross_numerator = total_entered - actual_sessions
             gross_read_rate = (gross_numerator / total_entered) * 100
             lines.append(f"Gross read rate: {gross_numerator}/{total_entered} ({gross_read_rate:.1f}%)")
         
-        # Net read rate: (Total number of readable parcels) minus (Parcels with read failure) out of (Total number of readable parcels)
+        # Net read rate: (Total number of readable sessions) minus (Sessions with read failure) out of (Total number of readable sessions)
         if total_readable > 0:
-            net_numerator = total_readable - parcels_read_failure
+            net_numerator = total_readable - sessions_read_failure
             net_read_rate = (net_numerator / total_readable) * 100
             lines.append(f"Net read rate: {net_numerator}/{total_readable} ({net_read_rate:.1f}%)")
         
-        self.parcel_stats_var.set("\n".join(lines))
+        self.session_stats_var.set("\n".join(lines))
 
     def auto_detect_total_groups(self):
-        """Auto-detect total number of parcels by finding the range between min and max ID values from filenames"""
+        """Auto-detect total number of sessions by finding the range between min and max ID values from filenames"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             return
         
@@ -3210,12 +3225,12 @@ class ImageLabelTool:
                     continue
         
         if valid_ids_found and max_id >= min_id:
-            # Calculate total parcels as the range: max_id - min_id + 1
-            total_parcels = max_id - min_id + 1
-            print(f"DEBUG: Auto-detected parcels range: {min_id} to {max_id} = {total_parcels} total parcels")
+            # Calculate total sessions as the range: max_id - min_id + 1
+            total_sessions = max_id - min_id + 1
+            print(f"DEBUG: Auto-detected sessions range: {min_id} to {max_id} = {total_sessions} total sessions")
             
-            # Set the total parcels field with the calculated range
-            self.total_parcels_var.set(str(total_parcels))
+            # Set the total sessions field with the calculated range
+            self.total_sessions_var.set(str(total_sessions))
             # Update statistics immediately
             self.update_total_stats()
 
@@ -3616,7 +3631,7 @@ class ImageLabelTool:
             
             # Update statistics
             self.root.after(0, self.update_total_stats)
-            self.root.after(0, self.update_parcel_stats)
+            self.root.after(0, self.update_session_stats)
             
             # Small delay to show progress (and simulate processing time)
             time.sleep(0.1)
@@ -3655,7 +3670,7 @@ class ImageLabelTool:
         self.update_progress_display()
         self.update_counts()
         self.update_total_stats()
-        self.update_parcel_stats()
+        self.update_session_stats()
         
         # Refresh the current image display to update radio button and status
         if hasattr(self, 'image_paths') and self.image_paths and self.current_index < len(self.image_paths):
@@ -3704,7 +3719,7 @@ class ImageLabelTool:
             self.root.after(0, self.save_csv)
             self.root.after(0, self.update_counts)
             self.root.after(0, self.update_total_stats)
-            self.root.after(0, self.update_parcel_stats)
+            self.root.after(0, self.update_session_stats)
             
             # Small delay to show progress
             time.sleep(0.1)
@@ -4216,7 +4231,7 @@ class ImageLabelTool:
         # Save to CSV and update statistics
         self.save_csv()
         self.update_total_stats()
-        self.update_parcel_stats()
+        self.update_session_stats()
         self.update_progress_display()
         self.update_counts()
         
