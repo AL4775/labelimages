@@ -172,7 +172,15 @@ class ImageLabelTool:
         filter_frame.pack(side=tk.LEFT, padx=(20, 0))
         tk.Label(filter_frame, text="Filter:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
         self.filter_var = tk.StringVar(value="(Unclassified) only")
-        filter_options = ["All images", "(Unclassified) only", "no label only", "read failure only", "incomplete only", "unreadable only", "OCR readable only"]
+        filter_options = [
+            "All images",
+            "(Unclassified) only",
+            "no label only",
+            "read failure only",
+            "incomplete only",
+            "unreadable only",
+            "OCR readable only"
+        ]
         self.filter_menu = tk.OptionMenu(filter_frame, self.filter_var, *filter_options, command=self.on_filter_changed)
         self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
         self.filter_menu.pack(side=tk.LEFT, padx=(5, 0))
@@ -1668,12 +1676,14 @@ class ImageLabelTool:
         output.append(f"Number of No-Code sessions: {analysis_data['no_code_count']}")
         output.append(f"Number of Read-Failure sessions: {analysis_data['read_failure_count']}")
         
-        # Calculate total unreadable
-        total_unreadable = fail_reading_parcels - analysis_data['no_code_count'] - analysis_data['read_failure_count']
+        # Calculate total unreadable (excluding OCR readable since they are readable)
+        ocr_readable_count = analysis_data.get('ocr_readable_count', 0)
+        total_unreadable = fail_reading_parcels - analysis_data['no_code_count'] - analysis_data['read_failure_count'] - ocr_readable_count
         if total_unreadable < 0:
             total_unreadable = 0
             
         output.append(f"Number of Unreadable sessions: {total_unreadable}")
+        output.append(f"Number of OCR readable sessions: {ocr_readable_count}")
         
         output.append("")  # Empty line
         
@@ -1891,7 +1901,7 @@ class ImageLabelTool:
     def get_analysis_data(self):
         """Get analysis data from current image classifications"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
-            return {'no_code_count': 0, 'read_failure_count': 0, 'total_sessions': 0, 'actual_sessions': 0, 'total_entered': 0}
+            return {'no_code_count': 0, 'read_failure_count': 0, 'ocr_readable_count': 0, 'total_sessions': 0, 'actual_sessions': 0, 'total_entered': 0}
             
         # Calculate session labels
         session_labels_dict = self.calculate_session_labels()
@@ -1899,6 +1909,7 @@ class ImageLabelTool:
         # Count sessions by category
         no_code_count = sum(1 for label in session_labels_dict.values() if label == "no label")
         read_failure_count = sum(1 for label in session_labels_dict.values() if label == "read failure")
+        ocr_readable_count = sum(1 for label in session_labels_dict.values() if label == "OCR readable")
         
         # Get actual sessions count (number of sessions found in images)
         actual_sessions = len(session_labels_dict)
@@ -1909,6 +1920,7 @@ class ImageLabelTool:
         return {
             'no_code_count': no_code_count,
             'read_failure_count': read_failure_count,
+            'ocr_readable_count': ocr_readable_count,
             'total_sessions': len(session_labels_dict),
             'actual_sessions': actual_sessions,
             'total_entered': total_entered
@@ -1928,18 +1940,18 @@ class ImageLabelTool:
         """Calculate net reading performance percentage using the same formula as Analysis tab"""
         # Get the data from analysis_data which matches the Analysis tab calculations
         total_entered = analysis_data.get('total_entered', 0)
-        actual_parcels = analysis_data.get('actual_parcels', 0)  
-        parcels_read_failure = analysis_data.get('read_failure_count', 0)
+        actual_sessions = analysis_data.get('actual_sessions', 0)  
+        sessions_read_failure = analysis_data.get('read_failure_count', 0)
+        sessions_ocr_readable = analysis_data.get('ocr_readable_count', 0)
         
         # Use the same formula as the Analysis tab:
-        # total_readable = total_entered - actual_parcels + parcels_read_failure
-        # net_read_rate = (total_readable - parcels_read_failure) / total_readable * 100
-        # This simplifies to: (total_entered - actual_parcels) / (total_entered - actual_parcels + parcels_read_failure) * 100
+        # total_readable = total_entered - actual_sessions + sessions_read_failure + sessions_ocr_readable
+        # net_read_rate = (total_readable - sessions_read_failure) / total_readable * 100
         
-        total_readable = total_entered - actual_parcels + parcels_read_failure
+        total_readable = total_entered - actual_sessions + sessions_read_failure + sessions_ocr_readable
         
         if total_readable > 0:
-            successful_reads = total_readable - parcels_read_failure
+            successful_reads = total_readable - sessions_read_failure
             return (successful_reads / total_readable) * 100
         return 0.0
     
@@ -2142,13 +2154,13 @@ class ImageLabelTool:
                 "no label only": "no label",
                 "read failure only": "read failure",
                 "incomplete only": "incomplete",
-                "unreadable only": "unreadable"
+                "unreadable only": "unreadable",
+                "OCR readable only": "OCR readable"
             }
-            
             target_label = filter_map.get(filter_value)
             if target_label:
-                self.image_paths = [path for path in self.all_image_paths 
-                                  if self.labels.get(path, LABELS[0]) == target_label]
+                self.image_paths = [path for path in self.all_image_paths
+                                   if self.labels.get(path, LABELS[0]) == target_label]
             else:
                 self.image_paths = self.all_image_paths.copy()
         
@@ -3232,8 +3244,8 @@ class ImageLabelTool:
             f"Number of sessions: {total_sessions}",
             f"Sessions with no label: {sessions_no_code}",
             f"Sessions with read failure: {sessions_read_failure}",
-            f"Sessions with OCR readable: {sessions_ocr_readable}",
             f"Sessions with unreadable code: {sessions_unreadable_code}",
+            f"Sessions with OCR readable: {sessions_ocr_readable}",
             f"Total readable sessions: {total_readable}"
         ]
         
