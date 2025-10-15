@@ -30,7 +30,7 @@ except ImportError:
 # Application version
 VERSION = "1.2.7"
 
-LABELS = ["(Unclassified)", "no label", "read failure", "incomplete", "unreadable"]
+LABELS = ["(Unclassified)", "no label", "read failure", "incomplete", "unreadable", "OCR readable"]
 
 class ImageLabelTool:
     def __init__(self, root):
@@ -172,7 +172,7 @@ class ImageLabelTool:
         filter_frame.pack(side=tk.LEFT, padx=(20, 0))
         tk.Label(filter_frame, text="Filter:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
         self.filter_var = tk.StringVar(value="(Unclassified) only")
-        filter_options = ["All images", "(Unclassified) only", "no label only", "read failure only", "incomplete only", "unreadable only"]
+        filter_options = ["All images", "(Unclassified) only", "no label only", "read failure only", "incomplete only", "unreadable only", "OCR readable only"]
         self.filter_menu = tk.OptionMenu(filter_frame, self.filter_var, *filter_options, command=self.on_filter_changed)
         self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
         self.filter_menu.pack(side=tk.LEFT, padx=(5, 0))
@@ -330,6 +330,7 @@ class ImageLabelTool:
             "(Unclassified)": "#F5F5F5", 
             "no label": "#FFF3E0", 
             "read failure": "#FCE4EC", 
+            "OCR readable": "#E8F5E8",
             "incomplete": "#E3F2FD",
             "unreadable": "#F1F8E9"
         }
@@ -339,6 +340,7 @@ class ImageLabelTool:
             "(Unclassified)": "",
             "no label": " (Q)",
             "read failure": " (W)", 
+            "OCR readable": " (T)",
             "incomplete": " (E)",
             "unreadable": " (R)"
         }
@@ -589,6 +591,8 @@ class ImageLabelTool:
         self.root.bind('<KeyPress-Q>', self.label_shortcut_q)
         self.root.bind('<KeyPress-w>', self.label_shortcut_w)
         self.root.bind('<KeyPress-W>', self.label_shortcut_w)
+        self.root.bind('<KeyPress-t>', self.label_shortcut_t)
+        self.root.bind('<KeyPress-T>', self.label_shortcut_t)
         self.root.bind('<KeyPress-e>', self.label_shortcut_e)
         self.root.bind('<KeyPress-E>', self.label_shortcut_e)
         self.root.bind('<KeyPress-r>', self.label_shortcut_r)
@@ -1119,6 +1123,20 @@ class ImageLabelTool:
             if was_unclassified:
                 self.jump_to_next_unclassified()
 
+    def label_shortcut_t(self, event=None):
+        """Keyboard shortcut: T for 'OCR readable'"""
+        if self.image_paths:
+            # Check if current image was unclassified before setting new label
+            current_path = self.image_paths[self.current_index]
+            was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
+            
+            self.label_var.set("OCR readable")
+            self.set_label_radio()
+            
+            # Only jump to next unclassified if this image was previously unclassified
+            if was_unclassified:
+                self.jump_to_next_unclassified()
+
     def label_shortcut_e(self, event=None):
         """Keyboard shortcut: E for 'incomplete'"""
         if self.image_paths:
@@ -1283,18 +1301,21 @@ class ImageLabelTool:
         
         sessions_no_code = 0
         sessions_read_failure = 0
+        sessions_ocr_readable = 0
         
         for session_label in session_labels_dict.values():
             if session_label == "no label":
                 sessions_no_code += 1
             elif session_label == "read failure":
                 sessions_read_failure += 1
+            elif session_label == "OCR readable":
+                sessions_ocr_readable += 1
         
-        # Calculate sessions with unreadable code
-        sessions_unreadable_code = actual_sessions - sessions_no_code - sessions_read_failure
+        # Calculate sessions with unreadable code (excluding OCR readable since they are readable)
+        sessions_unreadable_code = actual_sessions - sessions_no_code - sessions_read_failure - sessions_ocr_readable
         
-        # Calculate readable sessions using the same formula as Net Stats
-        total_readable = total_entered - actual_sessions + sessions_read_failure
+        # Calculate readable sessions using the same formula as Net Stats (including OCR readable)
+        total_readable = total_entered - actual_sessions + sessions_read_failure + sessions_ocr_readable
         
         # Calculate successful reads
         sessions_successful_reads = total_readable - sessions_read_failure
@@ -1304,6 +1325,7 @@ class ImageLabelTool:
         print(f"  - Actual sessions found: {actual_sessions}")
         print(f"  - Sessions no label: {sessions_no_code}")
         print(f"  - Sessions read failure: {sessions_read_failure}")
+        print(f"  - Sessions OCR readable: {sessions_ocr_readable}")
         print(f"  - Sessions unreadable code: {sessions_unreadable_code}")
         print(f"  - Total readable: {total_readable}")
         print(f"  - Successful reads: {sessions_successful_reads}")
@@ -1314,6 +1336,8 @@ class ImageLabelTool:
             session_stats["Sessions with no label"] = sessions_no_code
         if sessions_read_failure > 0:
             session_stats["Sessions with Read Failure"] = sessions_read_failure
+        if sessions_ocr_readable > 0:
+            session_stats["Sessions with OCR Readable"] = sessions_ocr_readable
         if sessions_unreadable_code > 0:
             session_stats["Sessions with Unreadable Code"] = sessions_unreadable_code
         if sessions_successful_reads > 0:
@@ -1356,6 +1380,7 @@ class ImageLabelTool:
         color_map = {
             "Sessions with no label": "#FF5722",          # Deep Orange/Red
             "Sessions with Read Failure": "#F44336",     # Red
+            "Sessions with OCR Readable": "#2196F3",     # Blue
             "Sessions with Unreadable Code": "#FF9800",  # Orange
             "Sessions with Successful Reads": "#4CAF50"  # Green
         }
@@ -2942,12 +2967,13 @@ class ImageLabelTool:
                 
                 sessions_no_code = sum(1 for label in session_labels_dict.values() if label == "no label")
                 sessions_read_failure = sum(1 for label in session_labels_dict.values() if label == "read failure")
+                sessions_ocr_readable = sum(1 for label in session_labels_dict.values() if label == "OCR readable")
                 
-                total_readable = total_entered - actual_sessions + sessions_read_failure
+                total_readable = total_entered - actual_sessions + sessions_read_failure + sessions_ocr_readable
                 
                 # Calculate rates
                 gross_rate = ((total_entered - actual_sessions) / total_entered * 100) if total_entered > 0 else 0
-                net_rate = ((total_readable - parcels_read_failure) / total_readable * 100) if total_readable > 0 else 0
+                net_rate = ((total_readable - sessions_read_failure) / total_readable * 100) if total_readable > 0 else 0
                 
                 rates = [gross_rate, net_rate]
                 rate_labels = ['Gross Read Rate', 'Net Read Rate']
@@ -3147,19 +3173,22 @@ class ImageLabelTool:
                 continue
             
             # Apply session labeling rules in priority order:
-            # 1. If any image has "read failure", session is "read failure" (technical issue)
-            if "read failure" in classified_labels:
+            # 1. If any image has "OCR readable", session is "OCR readable" (special rule)
+            if "OCR readable" in classified_labels:
+                session_labels_dict[session_id] = "OCR readable"
+            # 2. If any image has "read failure", session is "read failure" (technical issue)
+            elif "read failure" in classified_labels:
                 session_labels_dict[session_id] = "read failure"
-            # 2. If any image has "unreadable" issues, session has "unreadable" issues
+            # 3. If any image has "unreadable" issues, session has "unreadable" issues
             elif "unreadable" in classified_labels:
                 session_labels_dict[session_id] = "unreadable"
-            # 3. If any image is "incomplete", session is "incomplete"
+            # 4. If any image is "incomplete", session is "incomplete"
             elif "incomplete" in classified_labels:
                 session_labels_dict[session_id] = "incomplete"
-            # 4. If ALL classified images are "no label", session is "no label"
+            # 5. If ALL classified images are "no label", session is "no label"
             elif all(label == "no label" for label in classified_labels):
                 session_labels_dict[session_id] = "no label"
-            # 5. Default: if mix of categories, session is "incomplete"
+            # 6. Default: if mix of categories, session is "incomplete"
             else:
                 session_labels_dict[session_id] = "incomplete"
                 
@@ -3177,21 +3206,24 @@ class ImageLabelTool:
         total_sessions = len(session_labels_dict)
         sessions_no_code = 0
         sessions_read_failure = 0
+        sessions_ocr_readable = 0
         
         for session_label in session_labels_dict.values():
             if session_label == "no label":
                 sessions_no_code += 1
             elif session_label == "read failure":
                 sessions_read_failure += 1
+            elif session_label == "OCR readable":
+                sessions_ocr_readable += 1
         
-        # Calculate sessions with unreadable code
-        sessions_unreadable_code = total_sessions - sessions_no_code - sessions_read_failure
+        # Calculate sessions with unreadable code (excluding OCR readable since they are readable)
+        sessions_unreadable_code = total_sessions - sessions_no_code - sessions_read_failure - sessions_ocr_readable
         
         # Calculate total readable sessions using expected total from text field
         try:
             total_entered = int(self.total_sessions_var.get()) if self.total_sessions_var.get() else 0
-            # Total readable = Total number of session - number of sessions + Sessions with read failure
-            total_readable = total_entered - total_sessions + sessions_read_failure
+            # Total readable = Total number of session - number of sessions + Sessions with read failure + OCR readable sessions
+            total_readable = total_entered - total_sessions + sessions_read_failure + sessions_ocr_readable
         except ValueError:
             total_readable = "N/A (Enter expected total)"
         
@@ -3200,6 +3232,7 @@ class ImageLabelTool:
             f"Number of sessions: {total_sessions}",
             f"Sessions with no label: {sessions_no_code}",
             f"Sessions with read failure: {sessions_read_failure}",
+            f"Sessions with OCR readable: {sessions_ocr_readable}",
             f"Sessions with unreadable code: {sessions_unreadable_code}",
             f"Total readable sessions: {total_readable}"
         ]
@@ -3224,15 +3257,18 @@ class ImageLabelTool:
         
         sessions_no_code = 0
         sessions_read_failure = 0
+        sessions_ocr_readable = 0
         
         for session_label in session_labels_dict.values():
             if session_label == "no label":
                 sessions_no_code += 1
             elif session_label == "read failure":
                 sessions_read_failure += 1
+            elif session_label == "OCR readable":
+                sessions_ocr_readable += 1
         
-        # Calculate readable sessions: Total number of session - number of sessions + Sessions with read failure
-        total_readable = total_entered - actual_sessions + sessions_read_failure
+        # Calculate readable sessions: Total number of session - number of sessions + Sessions with read failure + OCR readable sessions
+        total_readable = total_entered - actual_sessions + sessions_read_failure + sessions_ocr_readable
         
         lines = []
         
