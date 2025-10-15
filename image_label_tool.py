@@ -30,12 +30,12 @@ except ImportError:
 # Application version
 VERSION = "1.2.7"
 
-LABELS = ["(Unclassified)", "no label", "read failure", "incomplete", "unreadable", "OCR readable"]
+LABELS = ["(Unclassified)", "no label", "read failure", "incomplete", "unreadable"]
 
 class ImageLabelTool:
     def __init__(self, root):
         self.root = root
-        self.root.title(f"Zebra FIS Analytics INTERNAL v{VERSION}")
+        self.root.title(f"Aurora FIS Analytics INTERNAL tool v{VERSION}")
         
         # Set application icon
         try:
@@ -60,6 +60,7 @@ class ImageLabelTool:
         self.image_paths = []
         self.current_index = 0
         self.labels = {}
+        self.ocr_readable = {}  # Track OCR readable status per image
         self.folder_path = None
         self.csv_filename = None
         self.scale_1to1 = False  # Track if we're in 1:1 scale mode
@@ -179,7 +180,7 @@ class ImageLabelTool:
             "read failure only",
             "incomplete only",
             "unreadable only",
-            "OCR readable only"
+            "OCR recovered only"
         ]
         self.filter_menu = tk.OptionMenu(filter_frame, self.filter_var, *filter_options, command=self.on_filter_changed)
         self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
@@ -338,7 +339,6 @@ class ImageLabelTool:
             "(Unclassified)": "#F5F5F5", 
             "no label": "#FFF3E0", 
             "read failure": "#FCE4EC", 
-            "OCR readable": "#E8F5E8",
             "incomplete": "#E3F2FD",
             "unreadable": "#F1F8E9"
         }
@@ -348,7 +348,6 @@ class ImageLabelTool:
             "(Unclassified)": "",
             "no label": " (Q)",
             "read failure": " (W)", 
-            "OCR readable": " (T)",
             "incomplete": " (E)",
             "unreadable": " (R)"
         }
@@ -375,6 +374,18 @@ class ImageLabelTool:
                               justify=tk.CENTER)  # Center-align multi-line text
             rb.grid(row=0, column=i, padx=1, pady=1, sticky="ew")  # Single row layout
             self.radio_buttons.append(rb)
+        
+        # OCR Readable checkbox (separate from radio buttons)
+        ocr_frame = tk.Frame(label_frame, bg="#FAFAFA")
+        ocr_frame.pack(pady=(8, 0))  # Add some space above the checkbox
+        
+        self.ocr_readable_var = tk.BooleanVar()
+        self.ocr_checkbox = tk.Checkbutton(ocr_frame, text="OCR Readable (T)", 
+                                         variable=self.ocr_readable_var,
+                                         command=self.on_ocr_checkbox_changed,
+                                         bg="#E8F5E8", font=("Arial", 11, "bold"),
+                                         selectcolor="white", padx=5, pady=2)
+        self.ocr_checkbox.pack()
         
         # Navigation buttons (right side) - stacked vertically for width efficiency
         nav_buttons_frame = tk.Frame(nav_label_container, bg="#FAFAFA")
@@ -447,7 +458,7 @@ class ImageLabelTool:
         tk.Label(session_section, text="Session count", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#81C784").pack()
         self.session_count_var = tk.StringVar()
         self.session_count_label = tk.Label(session_section, textvariable=self.session_count_var, 
-                                         font=("Arial", 13), bg="#F5F5F5", fg="#424242", wraplength=300,
+                                         font=("Arial", 13), bg="#F5F5F5", fg="#424242", wraplength=500,
                                          justify=tk.LEFT, anchor="w")
         self.session_count_label.pack(pady=(3, 0), fill=tk.X)
         
@@ -458,7 +469,7 @@ class ImageLabelTool:
         tk.Label(total_section, text="Net Stats", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#5E88D8").pack()
         self.session_stats_var = tk.StringVar()
         self.session_stats_label = tk.Label(total_section, textvariable=self.session_stats_var, 
-                                         font=("Arial", 13), fg="#424242", bg="#F5F5F5", wraplength=300,
+                                         font=("Arial", 13), fg="#424242", bg="#F5F5F5", wraplength=500,
                                          justify=tk.LEFT, anchor="w")
         self.session_stats_label.pack(pady=(3, 0), fill=tk.X)
 
@@ -884,6 +895,11 @@ class ImageLabelTool:
         
         label = self.labels.get(path, LABELS[0])
         self.label_var.set(label)
+        
+        # Update OCR readable checkbox status
+        ocr_status = self.ocr_readable.get(path, False)
+        self.ocr_readable_var.set(ocr_status)
+        
         self.status_var.set(f"{os.path.basename(path)} ({self.current_index+1}/{len(self.image_paths)}) - {original_width}x{original_height}px")
         
         # Update progress and label status
@@ -1073,6 +1089,24 @@ class ImageLabelTool:
                 
                 self.show_image()
 
+    def on_ocr_checkbox_changed(self):
+        """Handle OCR readable checkbox changes"""
+        if not self.image_paths:
+            return
+        path = self.image_paths[self.current_index]
+        
+        # Assign session index if this is the first classification for this session
+        self.assign_session_index_if_needed(path)
+        
+        self.ocr_readable[path] = self.ocr_readable_var.get()
+        self.save_csv()
+        self.update_counts()
+        self.update_session_stats()
+        self.update_total_stats()
+        self.update_progress_display()
+        self.update_current_label_status()
+        self.update_session_index_display()
+
     def assign_session_index_if_needed(self, image_path):
         """Assign a session index to a session when it gets its first classification"""
         session_id = self.get_session_number(image_path)
@@ -1132,18 +1166,12 @@ class ImageLabelTool:
                 self.jump_to_next_unclassified()
 
     def label_shortcut_t(self, event=None):
-        """Keyboard shortcut: T for 'OCR readable'"""
+        """Keyboard shortcut: T for 'OCR readable' checkbox toggle"""
         if self.image_paths:
-            # Check if current image was unclassified before setting new label
-            current_path = self.image_paths[self.current_index]
-            was_unclassified = current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
-            
-            self.label_var.set("OCR readable")
-            self.set_label_radio()
-            
-            # Only jump to next unclassified if this image was previously unclassified
-            if was_unclassified:
-                self.jump_to_next_unclassified()
+            # Toggle the OCR readable checkbox
+            current_value = self.ocr_readable_var.get()
+            self.ocr_readable_var.set(not current_value)
+            self.on_ocr_checkbox_changed()
 
     def label_shortcut_e(self, event=None):
         """Keyboard shortcut: E for 'incomplete'"""
@@ -1255,7 +1283,7 @@ class ImageLabelTool:
         
         # Create modal dialog
         pie_dialog = tk.Toplevel(self.root)
-        pie_dialog.title(f"Session Statistics Pie Chart - Zebra FIS Analytics INTERNAL v{VERSION}")
+        pie_dialog.title(f"Session Statistics Pie Chart - Aurora FIS Analytics INTERNAL tool v{VERSION}")
         pie_dialog.geometry("800x650")
         pie_dialog.configure(bg="#FAFAFA")
         pie_dialog.transient(self.root)  # Make it modal
@@ -1316,26 +1344,36 @@ class ImageLabelTool:
                 sessions_no_code += 1
             elif session_label == "read failure":
                 sessions_read_failure += 1
-            elif session_label == "OCR readable":
-                sessions_ocr_readable += 1
         
-        # Calculate sessions with unreadable code (excluding OCR readable since they are readable)
-        sessions_unreadable_code = actual_sessions - sessions_no_code - sessions_read_failure - sessions_ocr_readable
+        # Calculate sessions with OCR readable images (separate from primary classification)
+        sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
         
-        # Calculate readable sessions using the same formula as Net Stats (including OCR readable)
-        total_readable = total_entered - actual_sessions + sessions_read_failure + sessions_ocr_readable
+        # Calculate sessions with unreadable code (excluding no_code and read_failure)
+        sessions_unreadable_code = actual_sessions - sessions_no_code - sessions_read_failure
         
-        # Calculate successful reads
-        sessions_successful_reads = total_readable - sessions_read_failure
+        # Calculate readable sessions using NEW formulas:
+        # Total readable w/o OCR = total entered - session number + read failure
+        total_readable_excl_ocr = total_entered - actual_sessions + sessions_read_failure
         
-        print(f"DEBUG: Using Net Stats logic:")
+        # Calculate OCR readable sessions that are NOT read failure sessions
+        sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
+        
+        # Total readable w/ OCR = Total readable w/o OCR + OCR readable sessions that are not read failure
+        total_readable_incl_ocr = total_readable_excl_ocr + sessions_ocr_readable_non_failure
+        
+        # Calculate successful reads (using w/ OCR total)
+        sessions_successful_reads = total_readable_incl_ocr - sessions_read_failure
+        
+        print(f"DEBUG: Using NEW calculation formulas:")
         print(f"  - Total entered: {total_entered}")
         print(f"  - Actual sessions found: {actual_sessions}")
         print(f"  - Sessions no label: {sessions_no_code}")
         print(f"  - Sessions read failure: {sessions_read_failure}")
-        print(f"  - Sessions OCR readable: {sessions_ocr_readable}")
+        print(f"  - Sessions with OCR readable: {sessions_ocr_readable}")
+        print(f"  - Sessions OCR readable (non-failure): {sessions_ocr_readable_non_failure}")
         print(f"  - Sessions unreadable code: {sessions_unreadable_code}")
-        print(f"  - Total readable: {total_readable}")
+        print(f"  - Total readable (excl OCR): {total_readable_excl_ocr}")
+        print(f"  - Total readable (incl OCR): {total_readable_incl_ocr}")
         print(f"  - Successful reads: {sessions_successful_reads}")
         
         # Build result dictionary
@@ -1345,7 +1383,7 @@ class ImageLabelTool:
         if sessions_read_failure > 0:
             session_stats["Sessions with Read Failure"] = sessions_read_failure
         if sessions_ocr_readable > 0:
-            session_stats["Sessions with OCR Readable"] = sessions_ocr_readable
+            session_stats["Sessions with OCR Recovered"] = sessions_ocr_readable
         if sessions_unreadable_code > 0:
             session_stats["Sessions with Unreadable Code"] = sessions_unreadable_code
         if sessions_successful_reads > 0:
@@ -1388,7 +1426,7 @@ class ImageLabelTool:
         color_map = {
             "Sessions with no label": "#FF5722",          # Deep Orange/Red
             "Sessions with Read Failure": "#F44336",     # Red
-            "Sessions with OCR Readable": "#2196F3",     # Blue
+            "Sessions with OCR Recovered": "#2196F3",     # Blue
             "Sessions with Unreadable Code": "#FF9800",  # Orange
             "Sessions with Successful Reads": "#4CAF50"  # Green
         }
@@ -1683,7 +1721,7 @@ class ImageLabelTool:
             total_unreadable = 0
             
         output.append(f"Number of Unreadable sessions: {total_unreadable}")
-        output.append(f"Number of OCR readable sessions: {ocr_readable_count}")
+        output.append(f"Number of OCR recovered sessions: {ocr_readable_count}")
         
         output.append("")  # Empty line
         
@@ -1695,7 +1733,31 @@ class ImageLabelTool:
         net_reading_performance = self.calculate_net_reading_performance(results, analysis_data)
         
         output.append(f"Gross read performance: {gross_rate:.1f}%")
-        output.append(f"Net read performance: {net_reading_performance:.1f}%")
+        output.append(f"Net read performance (excl. OCR): {net_reading_performance['excl_ocr']:.2f}%")
+        output.append(f"Net read performance (incl. OCR): {net_reading_performance['incl_ocr']:.2f}%")
+        
+        # Add OCR improvement percentage
+        if net_reading_performance['excl_ocr'] >= 0 and net_reading_performance['incl_ocr'] >= 0:
+            # Get analysis data to calculate actual read numbers
+            total_entered = analysis_data.get('total_entered', 0)
+            actual_sessions = analysis_data.get('actual_sessions', 0)
+            sessions_read_failure = analysis_data.get('read_failure_count', 0)
+            sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
+            sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
+            
+            # Calculate readable sessions and read images
+            total_readable_excl_ocr = total_entered - actual_sessions + sessions_read_failure
+            total_readable_incl_ocr = total_readable_excl_ocr + sessions_ocr_readable_non_failure
+            
+            read_images_excl_ocr = total_readable_excl_ocr - sessions_read_failure
+            read_images_incl_ocr = read_images_excl_ocr + sessions_ocr_readable
+            
+            if read_images_excl_ocr > 0:
+                # Formula: [(Read w/ OCR - Read w/o OCR) / Read w/o OCR] × 100
+                ocr_improvement = ((read_images_incl_ocr - read_images_excl_ocr) / read_images_excl_ocr) * 100
+                output.append(f"OCR read rate improvement: +{ocr_improvement:.2f}%")
+            else:
+                output.append("OCR read rate improvement: N/A (no baseline reads)")
         
         # Join and display
         result_text = "\n".join(output)
@@ -1909,7 +1971,7 @@ class ImageLabelTool:
         # Count sessions by category
         no_code_count = sum(1 for label in session_labels_dict.values() if label == "no label")
         read_failure_count = sum(1 for label in session_labels_dict.values() if label == "read failure")
-        ocr_readable_count = sum(1 for label in session_labels_dict.values() if label == "OCR readable")
+        ocr_readable_count = self.calculate_sessions_with_ocr_readable()
         
         # Get actual sessions count (number of sessions found in images)
         actual_sessions = len(session_labels_dict)
@@ -1937,23 +1999,44 @@ class ImageLabelTool:
         return 0.0
     
     def calculate_net_reading_performance(self, log_results, analysis_data):
-        """Calculate net reading performance percentage using the same formula as Analysis tab"""
+        """Calculate net reading performance percentage using the NEW formulas"""
         # Get the data from analysis_data which matches the Analysis tab calculations
         total_entered = analysis_data.get('total_entered', 0)
         actual_sessions = analysis_data.get('actual_sessions', 0)  
         sessions_read_failure = analysis_data.get('read_failure_count', 0)
         sessions_ocr_readable = analysis_data.get('ocr_readable_count', 0)
         
-        # Use the same formula as the Analysis tab:
-        # total_readable = total_entered - actual_sessions + sessions_read_failure + sessions_ocr_readable
-        # net_read_rate = (total_readable - sessions_read_failure) / total_readable * 100
+        # Use the NEW formulas:
+        # Total readable w/o OCR = total entered - session number + read failure
+        total_readable_excl_ocr = total_entered - actual_sessions + sessions_read_failure
         
-        total_readable = total_entered - actual_sessions + sessions_read_failure + sessions_ocr_readable
+        # Calculate OCR readable sessions that are NOT read failure sessions
+        sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
         
-        if total_readable > 0:
-            successful_reads = total_readable - sessions_read_failure
-            return (successful_reads / total_readable) * 100
-        return 0.0
+        # Total readable w/ OCR = Total readable w/o OCR + OCR readable sessions that are not read failure
+        total_readable_incl_ocr = total_readable_excl_ocr + sessions_ocr_readable_non_failure
+        
+        results = {}
+        
+        # Net reading performance excluding OCR readable  
+        if total_readable_excl_ocr > 0:
+            successful_reads_excl_ocr = total_readable_excl_ocr - sessions_read_failure
+            results['excl_ocr'] = (successful_reads_excl_ocr / total_readable_excl_ocr) * 100
+            net_numerator_excl_ocr = successful_reads_excl_ocr
+        else:
+            results['excl_ocr'] = 0.0
+            net_numerator_excl_ocr = 0
+            
+        # Net reading performance including OCR readable - use same logic as main stats
+        if total_readable_incl_ocr > 0:
+            # sessions read using OCR = sessions that were read using OCR, regardless of other status
+            sessions_read_using_ocr = sessions_ocr_readable
+            net_numerator_incl_ocr = net_numerator_excl_ocr + sessions_read_using_ocr
+            results['incl_ocr'] = (net_numerator_incl_ocr / total_readable_incl_ocr) * 100
+        else:
+            results['incl_ocr'] = 0.0
+            
+        return results
     
     def export_log_analysis_report(self):
         """Export the log analysis results to a text report file"""
@@ -1980,8 +2063,8 @@ class ImageLabelTool:
             
             # Generate the report content
             report_lines = []
-            report_lines.append("ZEBRA FIS ANALYTICS - LOG ANALYSIS REPORT")
-            report_lines.append("=" * 50)
+            report_lines.append("AURORA FIS ANALYTICS INTERNAL TOOL - LOG ANALYSIS REPORT")
+            report_lines.append("=" * 60)
             report_lines.append(f"Generated: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}")
             report_lines.append("")
             
@@ -2052,7 +2135,31 @@ class ImageLabelTool:
             net_reading_performance = self.calculate_net_reading_performance(results, analysis_data)
             
             report_lines.append(f"Gross read performance: {gross_rate:.1f}%")
-            report_lines.append(f"Net read performance: {net_reading_performance:.1f}%")
+            report_lines.append(f"Net read performance (excl. OCR): {net_reading_performance['excl_ocr']:.2f}%")
+            report_lines.append(f"Net read performance (incl. OCR): {net_reading_performance['incl_ocr']:.2f}%")
+            
+            # Add OCR improvement percentage
+            if net_reading_performance['excl_ocr'] >= 0 and net_reading_performance['incl_ocr'] >= 0:
+                # Get analysis data to calculate actual read numbers
+                total_entered = analysis_data.get('total_entered', 0)
+                actual_sessions = analysis_data.get('actual_sessions', 0)
+                sessions_read_failure = analysis_data.get('read_failure_count', 0)
+                sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
+                sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
+                
+                # Calculate readable sessions and read images
+                total_readable_excl_ocr = total_entered - actual_sessions + sessions_read_failure
+                total_readable_incl_ocr = total_readable_excl_ocr + sessions_ocr_readable_non_failure
+                
+                read_images_excl_ocr = total_readable_excl_ocr - sessions_read_failure
+                read_images_incl_ocr = read_images_excl_ocr + sessions_ocr_readable
+                
+                if read_images_excl_ocr > 0:
+                    # Formula: [(Read w/ OCR - Read w/o OCR) / Read w/o OCR] × 100
+                    ocr_improvement = ((read_images_incl_ocr - read_images_excl_ocr) / read_images_excl_ocr) * 100
+                    report_lines.append(f"OCR read rate improvement: +{ocr_improvement:.2f}%")
+                else:
+                    report_lines.append("OCR read rate improvement: N/A (no baseline reads)")
             
             report_lines.append("")
             report_lines.append("=" * 50)
@@ -2147,6 +2254,10 @@ class ImageLabelTool:
         
         if filter_value == "All images":
             self.image_paths = self.all_image_paths.copy()
+        elif filter_value == "OCR recovered only":
+            # Special filter for OCR recovered images
+            self.image_paths = [path for path in self.all_image_paths
+                               if self.ocr_readable.get(path, False)]
         else:
             # Map filter names to label values
             filter_map = {
@@ -2154,8 +2265,7 @@ class ImageLabelTool:
                 "no label only": "no label",
                 "read failure only": "read failure",
                 "incomplete only": "incomplete",
-                "unreadable only": "unreadable",
-                "OCR readable only": "OCR readable"
+                "unreadable only": "unreadable"
             }
             target_label = filter_map.get(filter_value)
             if target_label:
@@ -2223,6 +2333,19 @@ class ImageLabelTool:
                     stored_path = row[0]  # This might be relative or absolute
                     image_label = row[1]
                     
+                    # Read OCR Readable status if available (3rd column, index 2)
+                    ocr_readable = False
+                    if len(row) >= 3:
+                        try:
+                            # Handle both boolean and string representations
+                            ocr_value = row[2]
+                            if isinstance(ocr_value, str):
+                                ocr_readable = ocr_value.lower() in ('true', 't', '1', 'yes')
+                            else:
+                                ocr_readable = bool(ocr_value)
+                        except (ValueError, TypeError):
+                            ocr_readable = False  # Default to False if parsing fails
+                    
                     # Convert relative path back to absolute path if needed
                     if hasattr(self, 'folder_path') and self.folder_path:
                         if os.path.isabs(stored_path):
@@ -2238,11 +2361,12 @@ class ImageLabelTool:
                         image_path = stored_path
                     
                     self.labels[image_path] = image_label
+                    self.ocr_readable[image_path] = ocr_readable
                     
                     # If session_index column exists and has a value, restore the session index
-                    if len(row) >= 5 and row[4]:  # session_index is 5th column (index 4)
+                    if len(row) >= 7 and row[6]:  # session_index is now 7th column (index 6)
                         try:
-                            session_index = int(row[4])
+                            session_index = int(row[6])
                             session_id = self.get_session_number(image_path)
                             if session_id:
                                 self.session_indices[session_id] = session_index
@@ -2261,10 +2385,13 @@ class ImageLabelTool:
             with open(self.csv_filename, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 # Write header
-                writer.writerow(['image_path', 'image_label', 'session_number', 'session_label', 'session_index'])
+                writer.writerow(['image_path', 'image_label', 'OCR_Readable', 'session_number', 'session_label', 'session_OCR_readable', 'session_index'])
                 
                 # Calculate current session labels
                 session_labels_dict = self.calculate_session_labels()
+                
+                # Calculate session OCR readable status
+                session_ocr_readable_dict = self.calculate_session_ocr_readable_status()
                 
                 for path, label in self.labels.items():
                     # Convert absolute path to relative path from the selected folder
@@ -2282,8 +2409,10 @@ class ImageLabelTool:
                     
                     session_id = self.get_session_number(path)
                     session_label = session_labels_dict.get(session_id, "no label") if session_id else "no label"
+                    session_ocr_readable = session_ocr_readable_dict.get(session_id, False) if session_id else False
                     session_index = self.get_session_index(path)
-                    writer.writerow([relative_path, label, session_id or "", session_label, session_index or ""])
+                    ocr_readable = self.ocr_readable.get(path, False)
+                    writer.writerow([relative_path, label, ocr_readable, session_id or "", session_label, session_ocr_readable, session_index or ""])
             
             # Also generate statistics CSV file
             self.save_stats_csv()
@@ -2511,7 +2640,7 @@ class ImageLabelTool:
         
         # Create a new window for charts
         charts_window = tk.Toplevel(self.root)
-        charts_window.title(f"Statistics Charts - Zebra FIS Analytics INTERNAL v{VERSION}")
+        charts_window.title(f"Statistics Charts - Aurora FIS Analytics INTERNAL tool v{VERSION}")
         charts_window.geometry("1200x800")
         charts_window.configure(bg="#FAFAFA")
         
@@ -2979,13 +3108,16 @@ class ImageLabelTool:
                 
                 sessions_no_code = sum(1 for label in session_labels_dict.values() if label == "no label")
                 sessions_read_failure = sum(1 for label in session_labels_dict.values() if label == "read failure")
-                sessions_ocr_readable = sum(1 for label in session_labels_dict.values() if label == "OCR readable")
+                sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
                 
-                total_readable = total_entered - actual_sessions + sessions_read_failure + sessions_ocr_readable
+                # Use NEW formulas for total readable calculation
+                total_readable_excl_ocr = total_entered - actual_sessions + sessions_read_failure
+                sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
+                total_readable_incl_ocr = total_readable_excl_ocr + sessions_ocr_readable_non_failure
                 
                 # Calculate rates
                 gross_rate = ((total_entered - actual_sessions) / total_entered * 100) if total_entered > 0 else 0
-                net_rate = ((total_readable - sessions_read_failure) / total_readable * 100) if total_readable > 0 else 0
+                net_rate = ((total_readable_incl_ocr - sessions_read_failure) / total_readable_incl_ocr * 100) if total_readable_incl_ocr > 0 else 0
                 
                 rates = [gross_rate, net_rate]
                 rate_labels = ['Gross Read Rate', 'Net Read Rate']
@@ -3077,6 +3209,12 @@ class ImageLabelTool:
         lines = []
         for label in LABELS:
             lines.append(f"  {label}: {counts[label]}")
+        
+        # Add OCR readable count as separate line
+        if hasattr(self, 'all_image_paths') and self.all_image_paths:
+            ocr_readable_count = len([path for path in self.all_image_paths if self.ocr_readable.get(path, False)])
+            lines.append(f"  OCR recovered: {ocr_readable_count}")
+        
         self.count_var.set("\n".join(lines))
         
         # Charts removed - no longer updating charts
@@ -3185,26 +3323,88 @@ class ImageLabelTool:
                 continue
             
             # Apply session labeling rules in priority order:
-            # 1. If any image has "OCR readable", session is "OCR readable" (special rule)
-            if "OCR readable" in classified_labels:
-                session_labels_dict[session_id] = "OCR readable"
-            # 2. If any image has "read failure", session is "read failure" (technical issue)
-            elif "read failure" in classified_labels:
+            # 1. If any image has "read failure", session is "read failure" (technical issue)
+            if "read failure" in classified_labels:
                 session_labels_dict[session_id] = "read failure"
-            # 3. If any image has "unreadable" issues, session has "unreadable" issues
+            # 2. If any image has "unreadable" issues, session has "unreadable" issues
             elif "unreadable" in classified_labels:
                 session_labels_dict[session_id] = "unreadable"
-            # 4. If any image is "incomplete", session is "incomplete"
+            # 3. If any image is "incomplete", session is "incomplete"
             elif "incomplete" in classified_labels:
                 session_labels_dict[session_id] = "incomplete"
-            # 5. If ALL classified images are "no label", session is "no label"
+            # 4. If ALL classified images are "no label", session is "no label"
             elif all(label == "no label" for label in classified_labels):
                 session_labels_dict[session_id] = "no label"
-            # 6. Default: if mix of categories, session is "incomplete"
+            # 5. Default: if mix of categories, session is "incomplete"
             else:
                 session_labels_dict[session_id] = "incomplete"
                 
         return session_labels_dict
+
+    def calculate_sessions_with_ocr_readable(self):
+        """Calculate number of sessions that have at least one OCR readable image"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            return 0
+        
+        # Group images by session
+        sessions = {}
+        for path in self.all_image_paths:
+            session_id = self.get_session_number(path)
+            if session_id:
+                if session_id not in sessions:
+                    sessions[session_id] = []
+                sessions[session_id].append(path)
+        
+        # Count sessions with at least one OCR readable image
+        ocr_readable_sessions = 0
+        for session_id, session_paths in sessions.items():
+            for path in session_paths:
+                if self.ocr_readable.get(path, False):
+                    ocr_readable_sessions += 1
+                    break  # Found one OCR readable image in this session, move to next session
+        
+        return ocr_readable_sessions
+
+    def calculate_session_ocr_readable_status(self):
+        """Calculate OCR readable status for each session (True if at least one image in session is OCR readable)"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            return {}
+        
+        # Group images by session
+        sessions = {}
+        for path in self.all_image_paths:
+            session_id = self.get_session_number(path)
+            if session_id:
+                if session_id not in sessions:
+                    sessions[session_id] = []
+                sessions[session_id].append(path)
+        
+        # Calculate OCR readable status for each session
+        session_ocr_readable_dict = {}
+        for session_id, session_paths in sessions.items():
+            # Check if any image in this session is OCR readable
+            has_ocr_readable = any(self.ocr_readable.get(path, False) for path in session_paths)
+            session_ocr_readable_dict[session_id] = has_ocr_readable
+        
+        return session_ocr_readable_dict
+
+    def calculate_ocr_readable_non_failure_sessions(self):
+        """Calculate number of sessions that have OCR readable images but are NOT classified as read failure"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            return 0
+        
+        session_labels_dict = self.calculate_session_labels()
+        session_ocr_readable_dict = self.calculate_session_ocr_readable_status()
+        
+        # Count sessions that are OCR readable but not read failure
+        count = 0
+        for session_id, is_ocr_readable in session_ocr_readable_dict.items():
+            if is_ocr_readable:  # Session has OCR readable images
+                session_label = session_labels_dict.get(session_id, "no label")
+                if session_label != "read failure":  # And is not classified as read failure
+                    count += 1
+        
+        return count
 
     def update_session_stats(self):
         """Calculate session statistics based on the labeling rules"""
@@ -3225,19 +3425,26 @@ class ImageLabelTool:
                 sessions_no_code += 1
             elif session_label == "read failure":
                 sessions_read_failure += 1
-            elif session_label == "OCR readable":
-                sessions_ocr_readable += 1
         
-        # Calculate sessions with unreadable code (excluding OCR readable since they are readable)
-        sessions_unreadable_code = total_sessions - sessions_no_code - sessions_read_failure - sessions_ocr_readable
+        # Calculate sessions with OCR readable images (separate from primary classification)
+        sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
+        
+        # Calculate sessions with unreadable code (excluding no_code and read_failure)
+        sessions_unreadable_code = total_sessions - sessions_no_code - sessions_read_failure
         
         # Calculate total readable sessions using expected total from text field
         try:
             total_entered = int(self.total_sessions_var.get()) if self.total_sessions_var.get() else 0
-            # Total readable = Total number of session - number of sessions + Sessions with read failure + OCR readable sessions
-            total_readable = total_entered - total_sessions + sessions_read_failure + sessions_ocr_readable
+            # Use NEW formulas:
+            # Total readable w/o OCR = total entered - actual sessions + read failure  
+            total_readable_excl_ocr = total_entered - total_sessions + sessions_read_failure
+            # Calculate OCR readable sessions that are NOT read failure sessions
+            sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
+            # Total readable w/ OCR = Total readable w/o OCR + OCR readable sessions that are not read failure
+            total_readable_incl_ocr = total_readable_excl_ocr + sessions_ocr_readable_non_failure
         except ValueError:
-            total_readable = "N/A (Enter expected total)"
+            total_readable_excl_ocr = "N/A (Enter expected total)"
+            total_readable_incl_ocr = "N/A (Enter expected total)"
         
         # Format the display
         lines = [
@@ -3245,8 +3452,9 @@ class ImageLabelTool:
             f"Sessions with no label: {sessions_no_code}",
             f"Sessions with read failure: {sessions_read_failure}",
             f"Sessions with unreadable code: {sessions_unreadable_code}",
-            f"Sessions with OCR readable: {sessions_ocr_readable}",
-            f"Total readable sessions: {total_readable}"
+            f"Sessions recovered with OCR: {sessions_ocr_readable}",
+            f"Total readable sessions (excl. OCR): {total_readable_excl_ocr}",
+            f"Total readable sessions (incl. OCR): {total_readable_incl_ocr}"
         ]
         
         self.session_count_var.set("\n".join(lines))
@@ -3269,18 +3477,22 @@ class ImageLabelTool:
         
         sessions_no_code = 0
         sessions_read_failure = 0
-        sessions_ocr_readable = 0
         
         for session_label in session_labels_dict.values():
             if session_label == "no label":
                 sessions_no_code += 1
             elif session_label == "read failure":
                 sessions_read_failure += 1
-            elif session_label == "OCR readable":
-                sessions_ocr_readable += 1
         
-        # Calculate readable sessions: Total number of session - number of sessions + Sessions with read failure + OCR readable sessions
-        total_readable = total_entered - actual_sessions + sessions_read_failure + sessions_ocr_readable
+        # Calculate OCR readable sessions
+        sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
+        sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
+        
+        # Calculate readable sessions using NEW formulas:
+        # Total readable w/o OCR = total entered - session number + read failure
+        total_readable_excl_ocr = total_entered - actual_sessions + sessions_read_failure
+        # Total readable w/ OCR = Total readable w/o OCR + OCR readable sessions that are not read failure
+        total_readable_incl_ocr = total_readable_excl_ocr + sessions_ocr_readable_non_failure
         
         lines = []
         
@@ -3288,13 +3500,43 @@ class ImageLabelTool:
         if total_entered > 0:
             gross_numerator = total_entered - actual_sessions
             gross_read_rate = (gross_numerator / total_entered) * 100
-            lines.append(f"Gross read rate: {gross_numerator}/{total_entered} ({gross_read_rate:.1f}%)")
+            lines.append(f"Gross read rate: {gross_numerator}/{total_entered} ({gross_read_rate:.2f}%)")
         
         # Net read rate: (Total number of readable sessions) minus (Sessions with read failure) out of (Total number of readable sessions)
-        if total_readable > 0:
-            net_numerator = total_readable - sessions_read_failure
-            net_read_rate = (net_numerator / total_readable) * 100
-            lines.append(f"Net read rate: {net_numerator}/{total_readable} ({net_read_rate:.1f}%)")
+        
+        # Calculate net numerator excluding OCR (always calculate for use in incl OCR calculation)
+        net_numerator_excl_ocr = total_readable_excl_ocr - sessions_read_failure
+        
+        if total_readable_excl_ocr > 0:
+            # Show net read rate excluding OCR readable sessions
+            net_read_rate_excl_ocr = (net_numerator_excl_ocr / total_readable_excl_ocr) * 100
+            lines.append(f"Net read rate (excl. OCR): {net_numerator_excl_ocr}/{total_readable_excl_ocr} ({net_read_rate_excl_ocr:.2f}%)")
+        else:
+            lines.append("Net read rate (excl. OCR): N/A (no readable sessions)")
+        
+        # Show net read rate including OCR readable sessions
+        if total_readable_incl_ocr > 0:
+            # sessions read using OCR = sessions that were read using OCR, regardless of other status
+            sessions_read_using_ocr = sessions_ocr_readable
+            net_numerator_incl_ocr = net_numerator_excl_ocr + sessions_read_using_ocr
+            net_read_rate_incl_ocr = (net_numerator_incl_ocr / total_readable_incl_ocr) * 100
+            lines.append(f"Net read rate (incl. OCR): {net_numerator_incl_ocr}/{total_readable_incl_ocr} ({net_read_rate_incl_ocr:.2f}%)")
+        else:
+            lines.append("Net read rate (incl. OCR): N/A (no readable sessions)")
+        
+        # Calculate and show OCR improvement percentage
+        if total_readable_excl_ocr > 0 and total_readable_incl_ocr > 0:
+            # Calculate number of read images (successful reads)
+            read_images_excl_ocr = total_readable_excl_ocr - sessions_read_failure
+            read_images_incl_ocr = read_images_excl_ocr + sessions_ocr_readable
+            
+            if read_images_excl_ocr > 0:
+                # Formula: [(Read w/ OCR - Read w/o OCR) / Read w/o OCR] × 100
+                ocr_improvement_percentage = ((read_images_incl_ocr - read_images_excl_ocr) / read_images_excl_ocr) * 100
+                lines.append(f"OCR read rate improvement: +{ocr_improvement_percentage:.2f}%")
+            else:
+                lines.append("OCR read rate improvement: N/A (no baseline reads)")
+        
         
         self.session_stats_var.set("\n".join(lines))
 
