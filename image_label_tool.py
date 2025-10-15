@@ -28,7 +28,7 @@ except ImportError:
     sns = None
 
 # Application version
-VERSION = "1.1.7"
+VERSION = "1.2.5"
 
 LABELS = ["(Unclassified)", "no code", "read failure", "occluded", "image quality", "damaged", "other"]
 
@@ -500,6 +500,16 @@ class ImageLabelTool:
         
         # Initially disable text editing
         self.log_results_text.config(state=tk.DISABLED)
+        
+        # Export button for log analysis report
+        export_button_frame = tk.Frame(log_results_section, bg="#F5F5F5")
+        export_button_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        self.btn_export_log_report = tk.Button(export_button_frame, text="📄 Export Report", 
+                                             command=self.export_log_analysis_report,
+                                             bg="#4CAF50", fg="white", font=("Arial", 10, "bold"),
+                                             relief="raised", bd=2, padx=12, pady=4, state='disabled')
+        self.btn_export_log_report.pack(side=tk.LEFT)
 
         # Auto monitoring section content (now in Progress tab)
         tk.Label(auto_detect_section, text="Auto Monitor New Files", bg="#FFF3E0", font=("Arial", 12, "bold"), fg="#F57C00").pack()
@@ -1355,6 +1365,9 @@ class ImageLabelTool:
             with open(file_path, 'r', encoding='utf-8') as f:
                 log_content = f.read()
             
+            # Store log content for later use (date range extraction, etc.)
+            self.current_log_content = log_content
+            
             # Analyze the log content
             analysis_results = self.parse_log_content(log_content)
             
@@ -1490,52 +1503,466 @@ class ImageLabelTool:
         }
     
     def display_log_analysis_results(self, results):
-        """Display the log analysis results in the text area"""
+        """Display the log analysis results in the structured format requested"""
         self.log_results_text.config(state=tk.NORMAL)
         self.log_results_text.delete(1.0, tk.END)
         
-        # Format and display results
-        output = []
-        output.append("=== LOG FILE ANALYSIS RESULTS ===\n")
-        output.append(f"Total Log Entries: {results['total_entries']}")
-        output.append(f"Unique IDs Detected: {results['unique_ids']}")
-        output.append(f"Total NOREAD Entries: {results.get('total_noread', 0)}")
-        output.append(f"False Triggers: {results['false_triggers']}")
-        output.append(f"Timeouts: {results['timeouts']}")
-        output.append(f"Effective Parcel Count: {results['effective_parcel_count']}")
+        # Store results for potential export
+        self.current_log_analysis = results
         
-        # Calculate and display NOREAD rate
+        # Extract start/end dates from log file if available
+        log_date_info = self.extract_log_date_range()
+        
+        # Get analysis data from current classifications
+        analysis_data = self.get_analysis_data()
+        
+        # Format and display results in the requested structure
+        output = []
+        
+        # PATH section
+        output.append("=== PATH ===")
+        if hasattr(self, 'folder_path') and self.folder_path:
+            output.append(f"Folder Path: {self.folder_path}")
+        else:
+            output.append("Folder Path: No folder selected")
+        
+        output.append("")  # Empty line
+        
+        # DATES section
+        output.append("=== DATES ===")
+        if log_date_info:
+            output.append(f"Start Date: {log_date_info['start_date']}")
+            output.append(f"End Date: {log_date_info['end_date']}")
+        else:
+            output.append("Start Date: Not available")
+            output.append("End Date: Not available")
+        
+        output.append("")  # Empty line
+        
+        # LOG FILE ANALYSIS section
+        output.append("=== LOG FILE ANALYSIS ===")
+        output.append(f"Number of unique IDs: {results['unique_ids']}")
+        
+        # Calculate read vs noread parcels
         total_noread = results.get('total_noread', 0)
         unique_ids = results['unique_ids']
-        missed_triggers = results['false_triggers']
-        successful_ids = unique_ids - missed_triggers
+        read_parcels = unique_ids - total_noread
         
-        if successful_ids > 0:
-            noread_rate = (total_noread / successful_ids) * 100
-            read_rate = 100.0 - noread_rate
-            output.append(f"NOREAD Rate: {noread_rate:.1f}% ({total_noread} NOREAD / {successful_ids} successful IDs)")
-            output.append(f"Read Rate: {read_rate:.1f}% (successful reads on first attempt)")
-        else:
-            output.append("NOREAD Rate: N/A (no successful IDs)")
-            output.append("Read Rate: N/A (no successful IDs)")
+        output.append(f"Number of Read parcels: {read_parcels}")
+        output.append(f"Number of NOREAD parcels: {total_noread}")
+        output.append(f"Number of False triggers: {results['false_triggers']}")
+        output.append(f"Number of Effective IDs: {results['effective_parcel_count']}")
         
-        output.append("\n" + "="*40 + "\n")
+        output.append("")  # Empty line
         
-        # Show calculation breakdown
-        output.append("CALCULATION BREAKDOWN:")
-        output.append(f"  Unique IDs Found: {results['unique_ids']}")
-        output.append(f"  - False Triggers: {results['false_triggers']}")
-        output.append(f"  - Timeouts: {results['timeouts']}")
-        output.append(f"  = Effective Count: {results['effective_parcel_count']}")
-        output.append("\n" + "="*40 + "\n")
+        # READING ANALYSIS section
+        output.append("=== READING ANALYSIS ===")
+        
+        # Calculate fail reading parcels (NOREAD minus missed triggers)
+        fail_reading_parcels = total_noread - results['false_triggers']
+        if fail_reading_parcels < 0:
+            fail_reading_parcels = 0
+            
+        output.append(f"Number of Fail reading parcels: {fail_reading_parcels}")
+        output.append(f"Number of No-code: {analysis_data['no_code_count']}")
+        output.append(f"Number of Read-failure: {analysis_data['read_failure_count']}")
+        
+        # Calculate total unreadable
+        total_unreadable = fail_reading_parcels - analysis_data['no_code_count'] - analysis_data['read_failure_count']
+        if total_unreadable < 0:
+            total_unreadable = 0
+            
+        output.append(f"Total number of Unreadable: {total_unreadable}")
+        
+        output.append("")  # Empty line
+        
+        # READ RATE section
+        output.append("=== READ RATE ===")
+        
+        # Calculate rates
+        gross_rate = self.calculate_gross_rate(results, analysis_data)
+        net_reading_performance = self.calculate_net_reading_performance(results, analysis_data)
+        
+        output.append(f"Gross rate: {gross_rate:.1f}%")
+        output.append(f"Net reading performance: {net_reading_performance:.1f}%")
         
         # Join and display
         result_text = "\n".join(output)
         self.log_results_text.insert(tk.END, result_text)
         self.log_results_text.config(state=tk.DISABLED)
         
-        # Generate CSV file with missed triggers and timeouts
+        # Enable export button
+        self.enable_export_button()
+        
+        # Generate CSV file with missed triggers and timeouts (existing functionality)
         self.generate_issues_csv(results)
+    
+    def extract_date_from_images(self):
+        """Extract date from image filenames (format: day-month-year)"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            return None
+            
+        try:
+            # Try the first few images in case the first one has an unusual format
+            for image_path in self.all_image_paths[:5]:
+                filename = os.path.basename(image_path)
+                
+                # Try to extract date from this filename
+                date_found = self.extract_date_from_filename(filename)
+                if date_found:
+                    return date_found
+                    
+        except Exception as e:
+            print(f"DEBUG: Error extracting date from images: {e}")
+            
+        return None
+    
+    def extract_date_from_filename(self, filename):
+        """Extract date from a single filename"""
+        try:
+            import re
+            
+            # Method 1: Extract timestamp from filename parts
+            parts = filename.split('_')
+            if len(parts) >= 4:
+                timestamp_part = parts[-1].split('.')[0]  # Remove extension
+                
+                # Case 1: YYYYMMDD format (exactly 8 digits)
+                if len(timestamp_part) == 8 and timestamp_part.isdigit():
+                    year = timestamp_part[:4]
+                    month = timestamp_part[4:6]
+                    day = timestamp_part[6:8]
+                    return f"{day}-{month}-{year}"
+                
+                # Case 2: YYYYMMDD_HHMMSS or YYYYMMDDHHMMSS format
+                if len(timestamp_part) >= 8:
+                    date_part = timestamp_part[:8]
+                    if date_part.isdigit() and len(date_part) == 8:
+                        year = date_part[:4]
+                        month = date_part[4:6]
+                        day = date_part[6:8]
+                        return f"{day}-{month}-{year}"
+                        
+                # Case 3: Check other parts for date
+                for part in parts:
+                    if len(part) >= 8 and part[:8].isdigit():
+                        date_part = part[:8]
+                        year = date_part[:4]
+                        month = date_part[4:6]
+                        day = date_part[6:8]
+                        # Validate date ranges
+                        if 2020 <= int(year) <= 2030 and 1 <= int(month) <= 12 and 1 <= int(day) <= 31:
+                            return f"{day}-{month}-{year}"
+            
+            # Method 2: Find YYYYMMDD pattern anywhere in filename using regex
+            date_pattern = re.search(r'(20\d{2})(\d{2})(\d{2})', filename)
+            if date_pattern:
+                year = date_pattern.group(1)
+                month = date_pattern.group(2)
+                day = date_pattern.group(3)
+                # Validate date ranges
+                if 1 <= int(month) <= 12 and 1 <= int(day) <= 31:
+                    return f"{day}-{month}-{year}"
+            
+            # Method 3: Look for different date patterns
+            other_patterns = [
+                r'(\d{2})-(\d{2})-(\d{4})',  # DD-MM-YYYY
+                r'(\d{2})/(\d{2})/(\d{4})',  # DD/MM/YYYY
+                r'(\d{4})-(\d{2})-(\d{2})',  # YYYY-MM-DD
+            ]
+            
+            for pattern in other_patterns:
+                match = re.search(pattern, filename)
+                if match:
+                    if pattern.startswith(r'(\d{4})'):  # YYYY-MM-DD format
+                        year, month, day = match.groups()
+                    else:  # DD-MM-YYYY or DD/MM/YYYY format
+                        day, month, year = match.groups()
+                    
+                    # Validate date ranges
+                    if 2020 <= int(year) <= 2030 and 1 <= int(month) <= 12 and 1 <= int(day) <= 31:
+                        return f"{day}-{month}-{year}"
+                        
+        except Exception as e:
+            print(f"DEBUG: Error extracting date from filename {filename}: {e}")
+            
+        return None
+    
+    def extract_log_date_range(self):
+        """Extract start and end dates from log file based on smallest and largest ID entries"""
+        if not hasattr(self, 'current_log_content') or not self.current_log_content:
+            return None
+        
+        try:
+            import re
+            from datetime import datetime
+            
+            # Extract all lines with timestamps and IDs
+            lines = self.current_log_content.split('\n')
+            entries = []
+            
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Look for ID pattern
+                id_matches = re.findall(r'ID:\s*(\d+)', line)
+                if not id_matches:
+                    continue
+                
+                # Try to extract timestamp from the line
+                # Common log timestamp patterns
+                timestamp_patterns = [
+                    r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})',  # YYYY-MM-DD HH:MM:SS
+                    r'(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})',  # MM/DD/YYYY HH:MM:SS
+                    r'(\d{2}-\d{2}-\d{4}\s+\d{2}:\d{2}:\d{2})',  # DD-MM-YYYY HH:MM:SS
+                    r'(\d{4}\d{2}\d{2}_\d{2}\d{2}\d{2})',        # YYYYMMDD_HHMMSS
+                    r'(\d{8}_\d{6})',                            # YYYYMMDD_HHMMSS
+                ]
+                
+                timestamp = None
+                for pattern in timestamp_patterns:
+                    match = re.search(pattern, line)
+                    if match:
+                        timestamp = match.group(1)
+                        break
+                
+                # If timestamp found, store entry
+                if timestamp:
+                    for id_val in id_matches:
+                        entries.append({
+                            'id': int(id_val) if id_val.isdigit() else 0,
+                            'timestamp': timestamp,
+                            'raw_line': line
+                        })
+            
+            if not entries:
+                return None
+            
+            # Sort by ID to find smallest and largest
+            entries.sort(key=lambda x: x['id'])
+            
+            start_entry = entries[0]
+            end_entry = entries[-1]
+            
+            # Format the timestamps
+            start_date = self.format_log_timestamp(start_entry['timestamp'])
+            end_date = self.format_log_timestamp(end_entry['timestamp'])
+            
+            return {
+                'start_date': start_date,
+                'end_date': end_date,
+                'start_id': start_entry['id'],
+                'end_id': end_entry['id']
+            }
+            
+        except Exception as e:
+            print(f"DEBUG: Error extracting log date range: {e}")
+            return None
+    
+    def format_log_timestamp(self, timestamp_str):
+        """Format a timestamp string to DD-MM-YYYY HH:MM:SS format"""
+        try:
+            from datetime import datetime
+            
+            # Try different parsing formats
+            formats = [
+                '%Y-%m-%d %H:%M:%S',    # YYYY-MM-DD HH:MM:SS
+                '%m/%d/%Y %H:%M:%S',    # MM/DD/YYYY HH:MM:SS
+                '%d-%m-%Y %H:%M:%S',    # DD-MM-YYYY HH:MM:SS
+                '%Y%m%d_%H%M%S',        # YYYYMMDD_HHMMSS
+            ]
+            
+            for fmt in formats:
+                try:
+                    dt = datetime.strptime(timestamp_str, fmt)
+                    return dt.strftime('%d-%m-%Y %H:%M:%S')
+                except ValueError:
+                    continue
+            
+            # If no format matches, return the original string
+            return timestamp_str
+            
+        except Exception:
+            return timestamp_str
+    
+    def get_analysis_data(self):
+        """Get analysis data from current image classifications"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            return {'no_code_count': 0, 'read_failure_count': 0, 'total_parcels': 0, 'actual_parcels': 0, 'total_entered': 0}
+            
+        # Calculate parcel labels
+        parcel_labels_dict = self.calculate_parcel_labels()
+        
+        # Count parcels by category
+        no_code_count = sum(1 for label in parcel_labels_dict.values() if label == "no code")
+        read_failure_count = sum(1 for label in parcel_labels_dict.values() if label == "read failure")
+        
+        # Get actual parcels count (number of parcels found in images)
+        actual_parcels = len(parcel_labels_dict)
+        
+        # Get total entered (expected total from user input)
+        total_entered = int(self.total_parcels_var.get()) if self.total_parcels_var.get() else 0
+        
+        return {
+            'no_code_count': no_code_count,
+            'read_failure_count': read_failure_count,
+            'total_parcels': len(parcel_labels_dict),
+            'actual_parcels': actual_parcels,
+            'total_entered': total_entered
+        }
+    
+    def calculate_gross_rate(self, log_results, analysis_data):
+        """Calculate gross rate percentage"""
+        unique_ids = log_results['unique_ids']
+        total_noread = log_results.get('total_noread', 0)
+        
+        if unique_ids > 0:
+            read_parcels = unique_ids - total_noread
+            return (read_parcels / unique_ids) * 100
+        return 0.0
+    
+    def calculate_net_reading_performance(self, log_results, analysis_data):
+        """Calculate net reading performance percentage using the same formula as Analysis tab"""
+        # Get the data from analysis_data which matches the Analysis tab calculations
+        total_entered = analysis_data.get('total_entered', 0)
+        actual_parcels = analysis_data.get('actual_parcels', 0)  
+        parcels_read_failure = analysis_data.get('read_failure_count', 0)
+        
+        # Use the same formula as the Analysis tab:
+        # total_readable = total_entered - actual_parcels + parcels_read_failure
+        # net_read_rate = (total_readable - parcels_read_failure) / total_readable * 100
+        # This simplifies to: (total_entered - actual_parcels) / (total_entered - actual_parcels + parcels_read_failure) * 100
+        
+        total_readable = total_entered - actual_parcels + parcels_read_failure
+        
+        if total_readable > 0:
+            successful_reads = total_readable - parcels_read_failure
+            return (successful_reads / total_readable) * 100
+        return 0.0
+    
+    def export_log_analysis_report(self):
+        """Export the log analysis results to a text report file"""
+        if not hasattr(self, 'current_log_analysis') or not self.current_log_analysis:
+            messagebox.showwarning("No Data", "No log analysis results available to export.")
+            return
+        
+        try:
+            from datetime import datetime
+            
+            # Create filename with timestamp
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Use the same directory as the selected folder if available
+            if hasattr(self, 'folder_path') and self.folder_path:
+                report_path = os.path.join(self.folder_path, f"FIS_Analytics_Report_{timestamp}.txt")
+            else:
+                report_path = f"FIS_Analytics_Report_{timestamp}.txt"
+            
+            # Get the current analysis data
+            results = self.current_log_analysis
+            log_date_info = self.extract_log_date_range()
+            analysis_data = self.get_analysis_data()
+            
+            # Generate the report content
+            report_lines = []
+            report_lines.append("ZEBRA FIS ANALYTICS - LOG ANALYSIS REPORT")
+            report_lines.append("=" * 50)
+            report_lines.append(f"Generated: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}")
+            report_lines.append("")
+            
+            # PATH section
+            report_lines.append("=== PATH ===")
+            if hasattr(self, 'folder_path') and self.folder_path:
+                report_lines.append(f"Folder Path: {self.folder_path}")
+            else:
+                report_lines.append("Folder Path: No folder selected")
+            
+            report_lines.append("")
+            
+            # DATES section
+            report_lines.append("=== DATES ===")
+            if log_date_info:
+                report_lines.append(f"Start Date: {log_date_info['start_date']}")
+                report_lines.append(f"End Date: {log_date_info['end_date']}")
+            else:
+                report_lines.append("Start Date: Not available")
+                report_lines.append("End Date: Not available")
+            
+            report_lines.append("")
+            
+            # LOG FILE ANALYSIS section
+            report_lines.append("LOG FILE ANALYSIS")
+            report_lines.append("-" * 20)
+            report_lines.append(f"Number of unique IDs: {results['unique_ids']}")
+            
+            # Calculate read vs noread parcels
+            total_noread = results.get('total_noread', 0)
+            unique_ids = results['unique_ids']
+            read_parcels = unique_ids - total_noread
+            
+            report_lines.append(f"Number of Read parcels: {read_parcels}")
+            report_lines.append(f"Number of NOREAD parcels: {total_noread}")
+            report_lines.append(f"Number of False triggers: {results['false_triggers']}")
+            report_lines.append(f"Number of Effective IDs: {results['effective_parcel_count']}")
+            
+            report_lines.append("")
+            
+            # READING ANALYSIS section
+            report_lines.append("READING ANALYSIS")
+            report_lines.append("-" * 16)
+            
+            # Calculate fail reading parcels (NOREAD minus missed triggers)
+            fail_reading_parcels = total_noread - results['false_triggers']
+            if fail_reading_parcels < 0:
+                fail_reading_parcels = 0
+                
+            report_lines.append(f"Number of Fail reading parcels: {fail_reading_parcels}")
+            report_lines.append(f"Number of No-code: {analysis_data['no_code_count']}")
+            report_lines.append(f"Number of Read-failure: {analysis_data['read_failure_count']}")
+            
+            # Calculate total unreadable
+            total_unreadable = fail_reading_parcels - analysis_data['no_code_count'] - analysis_data['read_failure_count']
+            if total_unreadable < 0:
+                total_unreadable = 0
+                
+            report_lines.append(f"Total number of Unreadable: {total_unreadable}")
+            
+            report_lines.append("")
+            
+            # READ RATE section
+            report_lines.append("=== READ RATE ===")
+            
+            # Calculate rates
+            gross_rate = self.calculate_gross_rate(results, analysis_data)
+            net_reading_performance = self.calculate_net_reading_performance(results, analysis_data)
+            
+            report_lines.append(f"Gross rate: {gross_rate:.1f}%")
+            report_lines.append(f"Net reading performance: {net_reading_performance:.1f}%")
+            
+            report_lines.append("")
+            report_lines.append("=" * 50)
+            report_lines.append("End of Report")
+            
+            # Write the report file
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(report_lines))
+            
+            # Show success message
+            messagebox.showinfo("Export Successful", 
+                              f"Log analysis report exported successfully!\n\n"
+                              f"File: {os.path.basename(report_path)}\n"
+                              f"Location: {os.path.dirname(report_path)}")
+            
+        except Exception as e:
+            messagebox.showerror("Export Error", 
+                               f"Failed to export log analysis report:\n\n{str(e)}")
+    
+    def enable_export_button(self):
+        """Enable the export button when analysis results are available"""
+        if hasattr(self, 'btn_export_log_report'):
+            self.btn_export_log_report.config(state='normal')
 
     def generate_issues_csv(self, results):
         """Generate a CSV file with IDs for missed triggers and timeouts"""
@@ -1547,9 +1974,9 @@ class ImageLabelTool:
         
         # Use the same directory as the selected folder if available, otherwise use current directory
         if hasattr(self, 'folder_path') and self.folder_path:
-            csv_path = os.path.join(self.folder_path, f"log_analysis_issues_{timestamp}.csv")
+            csv_path = os.path.join(self.folder_path, f"FIS_Analytics_Report_{timestamp}.csv")
         else:
-            csv_path = f"log_analysis_issues_{timestamp}.csv"
+            csv_path = f"FIS_Analytics_Report_{timestamp}.csv"
         
         try:
             # Combine missed triggers and timeouts into one list
@@ -1577,12 +2004,7 @@ class ImageLabelTool:
                 for id_val, issue_type in all_issues:
                     writer.writerow([id_val, issue_type])
             
-            # Update display to show CSV was generated
-            self.log_results_text.config(state=tk.NORMAL)
-            self.log_results_text.insert(tk.END, f"\n\n📄 CSV Generated: {os.path.basename(csv_path)}")
-            self.log_results_text.insert(tk.END, f"\n   Location: {csv_path}")
-            self.log_results_text.insert(tk.END, f"\n   Total issues exported: {len(all_issues)}")
-            self.log_results_text.config(state=tk.DISABLED)
+
             
         except Exception as e:
             # If CSV generation fails, show error in display
