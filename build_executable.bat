@@ -1,132 +1,142 @@
 @echo off
-REM ========================================================
-REM Script de construction d'exécutable standalone
-REM Image Label Tool - Zebra Technologies
-REM ========================================================
+REM ========================================
+REM Aurora FIS Analytics - Standalone Executable Builder  
+REM This script creates a standalone executable with all dependencies included
+REM ========================================
 
-echo.
-echo ========================================================
-echo  Construction de l'executable standalone
-echo  Image Label Tool v6.0.0
-echo ========================================================
+echo ========================================
+echo Aurora FIS Analytics Executable Builder
+echo ========================================
 echo.
 
-REM Vérifier si l'environnement virtuel existe
-if not exist ".venv\Scripts\activate.bat" (
-    echo ERREUR: Environnement virtuel .venv non trouve
-    echo Veuillez d'abord executer setup.bat pour creer l'environnement
+REM Check if Python is available
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: Python is not installed or not in PATH
+    echo Please install Python and try again
     pause
     exit /b 1
 )
 
-echo [1/5] Activation de l'environnement virtuel...
-call .venv\Scripts\activate.bat
-echo Environnement virtuel active... OK
+echo Python version:
+python --version
 echo.
 
-REM Vérifier si PyInstaller est installé, sinon l'installer
-echo [2/5] Verification des dependances...
-python -m pip show pyinstaller >nul 2>&1
+REM Check if PyInstaller is installed
+python -c "import PyInstaller" >nul 2>&1
 if errorlevel 1 (
-    echo Installation de PyInstaller...
+    echo PyInstaller not found. Installing...
     python -m pip install pyinstaller
     if errorlevel 1 (
-        echo ERREUR: Impossible d'installer PyInstaller
+        echo ERROR: Failed to install PyInstaller
         pause
         exit /b 1
     )
 )
-echo Dependances... OK
+
+REM Check if all required packages are installed
+echo Checking required packages...
+python -c "import PIL, cv2, matplotlib, seaborn, pandas, numpy" >nul 2>&1
+if errorlevel 1 (
+    echo Some required packages are missing. Installing from requirements.txt...
+    python -m pip install -r requirements.txt
+    if errorlevel 1 (
+        echo ERROR: Failed to install required packages
+        pause
+        exit /b 1
+    )
+)
+echo All required packages are available.
 echo.
 
-REM Nettoyer les anciens builds
-echo [3/5] Nettoyage des anciens builds...
-if exist build rmdir /s /q build
-if exist dist rmdir /s /q dist
-if exist __pycache__ rmdir /s /q __pycache__
-if exist ImageLabelTool.exe del ImageLabelTool.exe
-echo Nettoyage... OK
+REM Clean up previous builds
+echo Cleaning up previous builds...
+if exist "dist" rmdir /s /q "dist"
+if exist "build" rmdir /s /q "build"
+if exist "__pycache__" rmdir /s /q "__pycache__"
+if exist "AuroraFISAnalytics.exe" del "AuroraFISAnalytics.exe"
+echo Previous builds cleaned.
 echo.
 
-REM Construire l'exécutable avec PyInstaller
-echo [4/5] Construction de l'executable (ceci peut prendre plusieurs minutes)...
+REM Create the executable using the spec file
+echo Building standalone executable...
+echo This may take several minutes...
 echo.
 
-python -m PyInstaller ^
-  --onefile ^
-  --windowed ^
-  --name=ImageLabelTool ^
-  --distpath=. ^
-  --workpath=build ^
-  --specpath=. ^
-  --hidden-import=PIL ^
-  --hidden-import=PIL.Image ^
-  --hidden-import=PIL.ImageTk ^
-  --hidden-import=cv2 ^
-  --hidden-import=numpy ^
-  --hidden-import=tkinter ^
-  --hidden-import=tkinter.filedialog ^
-  --hidden-import=tkinter.messagebox ^
-  --hidden-import=tkinter.ttk ^
-  --exclude-module=matplotlib ^
-  --exclude-module=seaborn ^
-  --exclude-module=pandas ^
-  --exclude-module=scipy ^
-  --exclude-module=jupyter ^
-  --exclude-module=IPython ^
-  --exclude-module=plotly ^
-  --exclude-module=bokeh ^
-  --exclude-module=PyQt5 ^
-  --exclude-module=PyQt6 ^
-  --exclude-module=PySide2 ^
-  --exclude-module=PySide6 ^
-  --optimize=2 ^
-  --noupx ^
-  image_label_tool.py
+python -m PyInstaller aurora_fis_analytics.spec --clean --noconfirm
 
 if errorlevel 1 (
     echo.
-    echo ERREUR: Echec de la construction de l'executable
-    echo Consultez les messages d'erreur ci-dessus
+    echo ERROR: Build failed!
+    echo Check the output above for error details.
+    pause
+    exit /b 1
+)
+
+REM Check if executable was created successfully
+if not exist "dist\AuroraFISAnalytics.exe" (
+    echo.
+    echo ERROR: Executable was not created!
+    echo Check the build output for errors.
     pause
     exit /b 1
 )
 
 echo.
-echo Construction... OK
+echo ========================================
+echo BUILD SUCCESSFUL!
+echo ========================================
+echo.
+echo Executable location: dist\AuroraFISAnalytics.exe
+echo File size:
+for %%I in ("dist\AuroraFISAnalytics.exe") do echo   %%~zI bytes (%%~zI / 1024 / 1024 MB)
 echo.
 
-REM Vérifier que l'exécutable a été créé
-echo [5/5] Verification de l'executable...
-if exist ImageLabelTool.exe (
-    echo.
-    echo ========================================================
-    echo  CONSTRUCTION REUSSIE !
-    echo ========================================================
-    echo.
-    echo Executable cree : ImageLabelTool.exe
-    echo Taille du fichier:
-    for %%f in (ImageLabelTool.exe) do echo   %%~zf bytes (%%~zf octets)
-    echo.
-    echo L'executable est standalone et ne necessite pas
-    echo l'installation de Python ou de dependances.
-    echo.
-    echo Vous pouvez maintenant copier ImageLabelTool.exe
-    echo sur n'importe quel ordinateur Windows.
-    echo.
+REM Test the executable (optional)
+echo Testing the executable...
+echo Starting AuroraFISAnalytics.exe for 3 seconds...
+cd dist
+start "" "AuroraFISAnalytics.exe"
+cd ..
+
+REM Wait and check if it's running
+timeout /t 3 /nobreak >nul
+tasklist /fi "imagename eq AuroraFISAnalytics.exe" 2>nul | find /i "AuroraFISAnalytics.exe" >nul
+if not errorlevel 1 (
+    echo ✓ Executable started successfully!
+    echo Terminating test instance...
+    taskkill /f /im "AuroraFISAnalytics.exe" >nul 2>&1
 ) else (
-    echo ERREUR: L'executable n'a pas ete cree
-    pause
-    exit /b 1
+    echo Note: Test startup completed (executable may have closed normally)
 )
 
-REM Nettoyer les fichiers temporaires
-echo Nettoyage des fichiers temporaires...
-if exist build rmdir /s /q build
-if exist ImageLabelTool.spec del ImageLabelTool.spec
+echo.
+echo ========================================
+echo BUILD COMPLETE
+echo ========================================
+echo.
+echo Your standalone executable is ready at:
+echo   %CD%\dist\AuroraFISAnalytics.exe
+echo.
+echo This executable includes all dependencies and can be run on
+echo any Windows machine without requiring Python to be installed.
+echo.
+echo To distribute:
+echo 1. Copy the entire 'dist' folder to the target machine
+echo 2. Run AuroraFISAnalytics.exe from the dist folder
+echo.
+echo Build artifacts:
+echo   - dist\          (Contains the executable and runtime files)
+echo   - build\         (Build cache - can be deleted)
+echo   - aurora_fis_analytics.spec (Build configuration)
+echo.
+
+echo Clean up build cache? (Y/N)
+set /p cleanup="Enter choice: "
+if /i "%cleanup%"=="Y" (
+    if exist "build" rmdir /s /q "build"
+    echo Build cache cleaned.
+)
 
 echo.
-echo ========================================================
-echo  Appuyez sur une touche pour fermer cette fenetre
-echo ========================================================
-pause >nul
+pause

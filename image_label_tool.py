@@ -28,7 +28,7 @@ except ImportError:
     sns = None
 
 # Application version
-VERSION = "1.2.7"
+VERSION = "2.0.0"
 
 LABELS = ["(Unclassified)", "no label", "read failure", "incomplete", "unreadable"]
 
