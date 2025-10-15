@@ -28,14 +28,32 @@ except ImportError:
     sns = None
 
 # Application version
-VERSION = "1.1.2"
+VERSION = "1.1.7"
 
 LABELS = ["(Unclassified)", "no code", "read failure", "occluded", "image quality", "damaged", "other"]
 
 class ImageLabelTool:
     def __init__(self, root):
         self.root = root
-        self.root.title(f"Image Label Tool v{VERSION}")
+        self.root.title(f"Zebra FIS Analytics INTERNAL v{VERSION}")
+        
+        # Set application icon
+        try:
+            icon_path = os.path.join(os.path.dirname(__file__), "analytics_icon.ico")
+            if os.path.exists(icon_path):
+                self.root.iconbitmap(icon_path)
+            else:
+                # Fallback to PNG icon if ICO doesn't exist
+                png_icon_path = os.path.join(os.path.dirname(__file__), "analytics_icon_32x32.png")
+                if os.path.exists(png_icon_path):
+                    from PIL import Image, ImageTk
+                    icon_img = Image.open(png_icon_path)
+                    icon_photo = ImageTk.PhotoImage(icon_img)
+                    self.root.iconphoto(True, icon_photo)
+        except Exception as e:
+            # If icon loading fails, continue without icon
+            print(f"Note: Could not load application icon: {e}")
+        
         self.root.configure(bg="#FAFAFA")  # Very light gray background
         self.root.minsize(800, 500)  # Ultra-compact minimum window size
         self.root.geometry("1000x600")  # Ultra-compact window size
@@ -681,8 +699,10 @@ class ImageLabelTool:
         
         self.all_image_paths = []
         for f in all_files:
-            self.all_image_paths.append(os.path.join(folder, f))
-        
+            # Normalize all image paths consistently
+            image_path = os.path.normpath(os.path.join(folder, f))
+            self.all_image_paths.append(image_path)
+
         # Custom sort by trigger ID and sub-image count
         self.all_image_paths.sort(key=self.get_image_sort_key)
         self.current_index = 0
@@ -1138,7 +1158,7 @@ class ImageLabelTool:
         
         # Create modal dialog
         pie_dialog = tk.Toplevel(self.root)
-        pie_dialog.title(f"Parcel Statistics Pie Chart - Image Label Tool v{VERSION}")
+        pie_dialog.title(f"Parcel Statistics Pie Chart - Zebra FIS Analytics INTERNAL v{VERSION}")
         pie_dialog.geometry("800x650")
         pie_dialog.configure(bg="#FAFAFA")
         pie_dialog.transient(self.root)  # Make it modal
@@ -1667,8 +1687,23 @@ class ImageLabelTool:
             
             for row in reader:
                 if len(row) >= 2:  # At minimum need image_path and image_label
-                    image_path = row[0]
+                    stored_path = row[0]  # This might be relative or absolute
                     image_label = row[1]
+                    
+                    # Convert relative path back to absolute path if needed
+                    if hasattr(self, 'folder_path') and self.folder_path:
+                        if os.path.isabs(stored_path):
+                            # Already absolute path (backward compatibility)
+                            image_path = stored_path
+                        else:
+                            # Relative path - convert to absolute
+                            image_path = os.path.join(self.folder_path, stored_path)
+                            # Normalize the path to handle any inconsistencies
+                            image_path = os.path.normpath(image_path)
+                    else:
+                        # No folder_path available, use as-is
+                        image_path = stored_path
+                    
                     self.labels[image_path] = image_label
                     
                     # If parcel_index column exists and has a value, restore the parcel index
@@ -1699,10 +1734,23 @@ class ImageLabelTool:
                 parcel_labels_dict = self.calculate_parcel_labels()
                 
                 for path, label in self.labels.items():
+                    # Convert absolute path to relative path from the selected folder
+                    if hasattr(self, 'folder_path') and self.folder_path:
+                        try:
+                            # Normalize both paths before calculating relative path
+                            normalized_path = os.path.normpath(path)
+                            normalized_folder = os.path.normpath(self.folder_path)
+                            relative_path = os.path.relpath(normalized_path, normalized_folder)
+                        except ValueError:
+                            # If relpath fails (e.g., different drives), use just the filename
+                            relative_path = os.path.basename(path)
+                    else:
+                        relative_path = os.path.basename(path)
+                    
                     parcel_id = self.get_parcel_number(path)
                     parcel_label = parcel_labels_dict.get(parcel_id, "no code") if parcel_id else "no code"
                     parcel_index = self.get_parcel_index(path)
-                    writer.writerow([path, label, parcel_id or "", parcel_label, parcel_index or ""])
+                    writer.writerow([relative_path, label, parcel_id or "", parcel_label, parcel_index or ""])
             
             # Also generate statistics CSV file
             self.save_stats_csv()
@@ -1930,7 +1978,7 @@ class ImageLabelTool:
         
         # Create a new window for charts
         charts_window = tk.Toplevel(self.root)
-        charts_window.title(f"Statistics Charts - Image Label Tool v{VERSION}")
+        charts_window.title(f"Statistics Charts - Zebra FIS Analytics INTERNAL v{VERSION}")
         charts_window.geometry("1200x800")
         charts_window.configure(bg="#FAFAFA")
         
