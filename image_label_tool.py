@@ -177,6 +177,23 @@ class ImageLabelTool:
         self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
         self.filter_menu.pack(side=tk.LEFT, padx=(5, 0))
 
+        # Jump to Trigger ID frame (right side)
+        jump_frame = tk.Frame(top_frame, bg="#FAFAFA")
+        jump_frame.pack(side=tk.RIGHT, padx=(0, 20))
+        tk.Label(jump_frame, text="Jump to:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
+        self.jump_trigger_var = tk.StringVar()
+        self.jump_entry = tk.Entry(jump_frame, textvariable=self.jump_trigger_var, width=12, font=("Arial", 10))
+        self.jump_entry.pack(side=tk.LEFT, padx=(5, 5))
+        self.jump_button = tk.Button(jump_frame, text="Go", command=self.jump_to_trigger_id, 
+                                   bg="#CCCCCC", fg="white", font=("Arial", 9), relief="solid", bd=1, state=tk.DISABLED)
+        self.jump_button.pack(side=tk.LEFT)
+        
+        # Initially disable jump entry as well since default filter is not "All images"
+        self.jump_entry.config(state=tk.DISABLED)
+        
+        # Bind Enter key to jump function
+        self.jump_entry.bind('<Return>', lambda event: self.jump_to_trigger_id())
+
         # Top toolbar for view controls and export
         toolbar_frame = tk.Frame(main_frame, bg="#E8E8E8", relief="solid", bd=1)
         toolbar_frame.pack(fill=tk.X, pady=(0, 5))
@@ -729,6 +746,9 @@ class ImageLabelTool:
         self.update_warning_message()
         self.update_navigation_buttons()
         self.update_log_file_button_state()  # Enable log file button when folder is selected
+        
+        # Set initial state for Jump to functionality after UI is fully initialized
+        self.root.after_idle(self.update_jump_button_state)
 
     def get_image_sort_key(self, image_path):
         """
@@ -914,6 +934,66 @@ class ImageLabelTool:
         # If no unclassified images found, show a message
         import tkinter.messagebox as messagebox
         messagebox.showinfo("Navigation", "No unclassified images found.")
+
+    def jump_to_trigger_id(self):
+        """Jump to the first image with the specified trigger ID."""
+        if not self.image_paths:
+            return
+            
+        # Check if filter is set to "All images"
+        if self.filter_var.get() != "All images":
+            import tkinter.messagebox as messagebox
+            messagebox.showwarning("Jump to Trigger ID", 
+                                 "Jump to Trigger ID only works when filter is set to 'All images'.")
+            return
+        
+        # Get the trigger ID from the input field
+        trigger_id_input = self.jump_trigger_var.get().strip()
+        if not trigger_id_input:
+            import tkinter.messagebox as messagebox
+            messagebox.showwarning("Jump to Trigger ID", "Please enter a Trigger ID.")
+            return
+        
+        # Normalize the input (remove leading zeros if it's numeric)
+        try:
+            # If it's a number, convert to int then back to string to remove leading zeros
+            if trigger_id_input.isdigit():
+                normalized_trigger_id = str(int(trigger_id_input))
+            else:
+                normalized_trigger_id = trigger_id_input
+        except ValueError:
+            normalized_trigger_id = trigger_id_input
+        
+        # Search for the first image with the matching trigger ID
+        for i, path in enumerate(self.image_paths):
+            filename = os.path.basename(path)
+            filename_without_ext = os.path.splitext(filename)[0]
+            parts = filename_without_ext.split('_')
+            
+            if len(parts) >= 1:
+                # Extract trigger ID (first part before underscore)
+                file_trigger_id_str = parts[0]
+                # Normalize the file trigger ID (remove leading zeros if numeric)
+                try:
+                    if file_trigger_id_str.isdigit():
+                        file_trigger_id = str(int(file_trigger_id_str))
+                    else:
+                        file_trigger_id = file_trigger_id_str
+                except ValueError:
+                    file_trigger_id = file_trigger_id_str
+                
+                # Check if this trigger ID matches
+                if file_trigger_id == normalized_trigger_id:
+                    self.current_index = i
+                    self.show_image()
+                    # Clear the input field after successful jump
+                    self.jump_trigger_var.set("")
+                    return
+        
+        # If no image found with that trigger ID
+        import tkinter.messagebox as messagebox
+        messagebox.showinfo("Jump to Trigger ID", 
+                           f"No image found with Trigger ID: {normalized_trigger_id}")
 
     def set_label(self, value):
         if not self.image_paths:
@@ -1146,6 +1226,23 @@ class ImageLabelTool:
         """Called when the filter dropdown changes"""
         self.apply_filter()
         self.update_filter_button_state()
+        self.update_jump_button_state()
+
+    def update_jump_button_state(self):
+        """Enable/disable jump functionality based on current filter"""
+        try:
+            if hasattr(self, 'jump_button') and hasattr(self, 'jump_entry'):
+                if self.filter_var.get() == "All images":
+                    # Enable jump functionality
+                    self.jump_button.config(state=tk.NORMAL, bg="#4CAF50")
+                    self.jump_entry.config(state=tk.NORMAL)
+                else:
+                    # Disable jump functionality
+                    self.jump_button.config(state=tk.DISABLED, bg="#CCCCCC")
+                    self.jump_entry.config(state=tk.DISABLED)
+        except Exception as e:
+            # Silently handle any UI update errors during initialization
+            pass
 
     def show_session_pie_chart(self):
         """Display a modal dialog with pie chart for session statistics"""
@@ -1556,7 +1653,7 @@ class ImageLabelTool:
         
         # LOG FILE ANALYSIS section
         output.append("=== LOG FILE ANALYSIS ===")
-        output.append(f"Number of unique IDs: {results['unique_ids']}")
+        output.append(f"Number of sessions: {results['unique_ids']}")
         
         # Calculate read vs noread sessions
         total_noread = results.get('total_noread', 0)
@@ -1564,9 +1661,9 @@ class ImageLabelTool:
         read_sessions = unique_ids - total_noread
         
         output.append(f"Number of Read sessions: {read_sessions}")
-        output.append(f"Number of NOREAD sessions: {total_noread}")
+        output.append(f"Number of No-Read sessions: {total_noread}")
         output.append(f"Number of False triggers: {results['false_triggers']}")
-        output.append(f"Number of Effective IDs: {results['effective_session_count']}")
+        output.append(f"Number of Effective sessions: {results['effective_session_count']}")
         
         output.append("")  # Empty line
         
@@ -1578,16 +1675,16 @@ class ImageLabelTool:
         if fail_reading_parcels < 0:
             fail_reading_parcels = 0
             
-        output.append(f"Number of Fail reading parcels: {fail_reading_parcels}")
-        output.append(f"Number of No-label: {analysis_data['no_code_count']}")
-        output.append(f"Number of Read-failure: {analysis_data['read_failure_count']}")
+        output.append(f"Number of Failed sessions: {fail_reading_parcels}")
+        output.append(f"Number of No-Code sessions: {analysis_data['no_code_count']}")
+        output.append(f"Number of Read-Failure sessions: {analysis_data['read_failure_count']}")
         
         # Calculate total unreadable
         total_unreadable = fail_reading_parcels - analysis_data['no_code_count'] - analysis_data['read_failure_count']
         if total_unreadable < 0:
             total_unreadable = 0
             
-        output.append(f"Total number of Unreadable: {total_unreadable}")
+        output.append(f"Number of Unreadable sessions: {total_unreadable}")
         
         output.append("")  # Empty line
         
@@ -1598,8 +1695,8 @@ class ImageLabelTool:
         gross_rate = self.calculate_gross_rate(results, analysis_data)
         net_reading_performance = self.calculate_net_reading_performance(results, analysis_data)
         
-        output.append(f"Gross rate: {gross_rate:.1f}%")
-        output.append(f"Net reading performance: {net_reading_performance:.1f}%")
+        output.append(f"Gross read performance: {gross_rate:.1f}%")
+        output.append(f"Net read performance: {net_reading_performance:.1f}%")
         
         # Join and display
         result_text = "\n".join(output)
@@ -1910,7 +2007,7 @@ class ImageLabelTool:
             # LOG FILE ANALYSIS section
             report_lines.append("LOG FILE ANALYSIS")
             report_lines.append("-" * 20)
-            report_lines.append(f"Number of unique IDs: {results['unique_ids']}")
+            report_lines.append(f"Number of sessions: {results['unique_ids']}")
             
             # Calculate read vs noread sessions
             total_noread = results.get('total_noread', 0)
@@ -1918,9 +2015,9 @@ class ImageLabelTool:
             read_sessions = unique_ids - total_noread
             
             report_lines.append(f"Number of Read sessions: {read_sessions}")
-            report_lines.append(f"Number of NOREAD sessions: {total_noread}")
+            report_lines.append(f"Number of No-Read sessions: {total_noread}")
             report_lines.append(f"Number of False triggers: {results['false_triggers']}")
-            report_lines.append(f"Number of Effective IDs: {results['effective_session_count']}")
+            report_lines.append(f"Number of Effective sessions: {results['effective_session_count']}")
             
             report_lines.append("")
             
@@ -1933,16 +2030,16 @@ class ImageLabelTool:
             if fail_reading_parcels < 0:
                 fail_reading_parcels = 0
                 
-            report_lines.append(f"Number of Fail reading parcels: {fail_reading_parcels}")
-            report_lines.append(f"Number of No-code: {analysis_data['no_code_count']}")
-            report_lines.append(f"Number of Read-failure: {analysis_data['read_failure_count']}")
+            report_lines.append(f"Number of Failed sessions: {fail_reading_parcels}")
+            report_lines.append(f"Number of No-Code sessions: {analysis_data['no_code_count']}")
+            report_lines.append(f"Number of Read-Failure sessions: {analysis_data['read_failure_count']}")
             
             # Calculate total unreadable
             total_unreadable = fail_reading_parcels - analysis_data['no_code_count'] - analysis_data['read_failure_count']
             if total_unreadable < 0:
                 total_unreadable = 0
                 
-            report_lines.append(f"Total number of Unreadable: {total_unreadable}")
+            report_lines.append(f"Number of Unreadable sessions: {total_unreadable}")
             
             report_lines.append("")
             
@@ -1953,8 +2050,8 @@ class ImageLabelTool:
             gross_rate = self.calculate_gross_rate(results, analysis_data)
             net_reading_performance = self.calculate_net_reading_performance(results, analysis_data)
             
-            report_lines.append(f"Gross rate: {gross_rate:.1f}%")
-            report_lines.append(f"Net reading performance: {net_reading_performance:.1f}%")
+            report_lines.append(f"Gross read performance: {gross_rate:.1f}%")
+            report_lines.append(f"Net read performance: {net_reading_performance:.1f}%")
             
             report_lines.append("")
             report_lines.append("=" * 50)
@@ -3025,19 +3122,19 @@ class ImageLabelTool:
             self.label_status_var.set("○ UNCLASSIFIED")
             self.label_status_label.config(fg="#EF9A9A")  # Soft red
     
-    def update_parcel_index_display(self):
-        """Update the parcel index display for current image."""
+    def update_session_index_display(self):
+        """Update the session index display for current image."""
         if not self.image_paths:
-            self.parcel_index_var.set("")
+            self.session_index_var.set("")
             return
         
         current_path = self.image_paths[self.current_index]
-        parcel_index = self.get_parcel_index(current_path)
+        session_index = self.get_session_index(current_path)
         
-        if parcel_index is not None:
-            self.parcel_index_var.set(f"Parcel Index: {parcel_index}")
+        if session_index is not None:
+            self.session_index_var.set(f"Session Index: {session_index}")
         else:
-            self.parcel_index_var.set("Parcel Index: None")
+            self.session_index_var.set("Session Index: None")
 
     def get_session_number(self, image_path):
         """Extract the group ID from filename using ID (first part) + Timestamp (last part)"""
