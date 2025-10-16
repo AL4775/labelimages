@@ -156,8 +156,8 @@ class ImageLabelTool:
         self.folder_path_var = tk.StringVar(value="No folder selected")
         self.folder_path_label = tk.Label(top_frame, textvariable=self.folder_path_var, 
                                          bg="#FAFAFA", font=("Arial", 9), fg="#666666",
-                                         wraplength=600, justify=tk.LEFT, anchor="w")
-        self.folder_path_label.pack(side=tk.LEFT, padx=(10, 0), fill=tk.X, expand=True)
+                                         wraplength=400, justify=tk.LEFT, anchor="w", width=50)
+        self.folder_path_label.pack(side=tk.LEFT, padx=(10, 0))
         
         # Total number of sessions input (right side)
         total_frame = tk.Frame(top_frame, bg="#FAFAFA")
@@ -510,7 +510,7 @@ class ImageLabelTool:
         total_section = tk.Frame(analysis_tab, bg="#F5F5F5", relief="solid", bd=1, padx=6, pady=6)
         total_section.pack(fill=tk.X, pady=(0, 6))
         
-        tk.Label(total_section, text="Net Stats", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#5E88D8").pack()
+        tk.Label(total_section, text="Performance metrics", bg="#F5F5F5", font=("Arial", 12, "bold"), fg="#5E88D8").pack()
         self.session_stats_var = tk.StringVar()
         self.session_stats_label = tk.Label(total_section, textvariable=self.session_stats_var, 
                                          font=("Arial", 13), fg="#424242", bg="#F5F5F5", wraplength=500,
@@ -1856,7 +1856,7 @@ class ImageLabelTool:
         
         # LOG FILE ANALYSIS section
         output.append("=== LOG FILE ANALYSIS ===")
-        output.append(f"Number of sessions: {results['unique_ids']}")
+        output.append(f"Number of failed sessions: {results['unique_ids']}")
         
         # Calculate read vs noread sessions
         total_noread = results.get('total_noread', 0)
@@ -2260,7 +2260,7 @@ class ImageLabelTool:
             # LOG FILE ANALYSIS section
             report_lines.append("LOG FILE ANALYSIS")
             report_lines.append("-" * 20)
-            report_lines.append(f"Number of sessions: {results['unique_ids']}")
+            report_lines.append(f"Number of failed sessions: {results['unique_ids']}")
             
             # Calculate read vs noread sessions
             total_noread = results.get('total_noread', 0)
@@ -3624,7 +3624,7 @@ class ImageLabelTool:
         
         # Format the display
         lines = [
-            f"Number of sessions: {total_sessions}",
+            f"Number of failed sessions: {total_sessions}",
             f"Sessions with no label: {sessions_no_code}",
             f"Sessions with read failure: {sessions_read_failure}",
             f"Sessions with unreadable code: {sessions_unreadable_code}",
