@@ -40,7 +40,7 @@ The standalone executable includes ALL features:
 - ✅ Dual statistics (with/without OCR calculations)
 
 ### Advanced Features
-- ✅ CSV export with 7-column structure
+- ✅ CSV export with 8-column structure (including image comments)
 - ✅ Filter options including "OCR recovered only"
 - ✅ Auto-detection capabilities for barcode analysis
 - ✅ Progress tracking and real-time statistics

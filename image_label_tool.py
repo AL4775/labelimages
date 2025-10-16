@@ -61,6 +61,7 @@ class ImageLabelTool:
         self.current_index = 0
         self.labels = {}
         self.ocr_readable = {}  # Track OCR readable status per image
+        self.comments = {}  # Track comments for each image
         self.folder_path = None
         self.csv_filename = None
         self.scale_1to1 = False  # Track if we're in 1:1 scale mode
@@ -72,9 +73,9 @@ class ImageLabelTool:
         # Track previously seen files for new file detection
         self.previously_seen_files = set()
         
-        # Session index tracking
-        self.session_indices = {}  # Maps session_id to session_index
-        self.next_session_index = 1  # Next index to assign to a newly classified session
+        # Session index tracking - removed, no longer used
+        # self.session_indices = {}  # Maps session_id to session_index
+        # self.next_session_index = 1  # Next index to assign to a newly classified session
         
         # Set up logging for barcode detection
         self.setup_logging()
@@ -298,12 +299,6 @@ class ImageLabelTool:
                              font=("Arial", 12), fg="#424242")  # Smaller font
         self.status.pack(pady=(5, 2))  # Reduced from (10, 5) to (5, 2)
         
-        # Add session index display - reduced spacing
-        self.session_index_var = tk.StringVar()
-        self.session_index_label = tk.Label(center_panel, textvariable=self.session_index_var, bg="#FAFAFA",
-                                         font=("Arial", 12), fg="#424242")  # Smaller font
-        self.session_index_label.pack(pady=(0, 2))  # Reduced from (0, 5) to (0, 2)
-
         # Navigation and radio buttons for labels (below image) - compact spacing
         self.label_var = tk.StringVar(value=LABELS[0])
         
@@ -434,6 +429,55 @@ class ImageLabelTool:
                                   font=("Arial", 13), fg="#424242", wraplength=200,
                                   justify=tk.LEFT, anchor="w")
         self.count_label.pack(pady=(3, 0), fill=tk.X)
+        
+        # Comment section for current image
+        comment_section = tk.Frame(progress_tab, bg="#E3F2FD", relief="solid", bd=1, padx=6, pady=6)
+        comment_section.pack(fill=tk.X, pady=(0, 6))
+        
+        tk.Label(comment_section, text="Current image comment", bg="#E3F2FD", font=("Arial", 12, "bold"), fg="#1976D2").pack()
+        
+        # Current image filename label
+        self.current_image_filename_var = tk.StringVar()
+        self.current_image_filename_label = tk.Label(comment_section, textvariable=self.current_image_filename_var,
+                                                    bg="#E3F2FD", font=("Arial", 10, "bold"), fg="#424242",
+                                                    justify=tk.LEFT, anchor="w")
+        self.current_image_filename_label.pack(fill=tk.X, pady=(2, 5))
+        
+        # Comment text field
+        comment_input_frame = tk.Frame(comment_section, bg="#E3F2FD")
+        comment_input_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # Create frame for text widget and scrollbar
+        text_frame = tk.Frame(comment_input_frame, bg="#E3F2FD")
+        text_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # Use Text widget for multiline comments instead of Entry
+        self.comment_text = tk.Text(text_frame, 
+                                   font=("Arial", 11), bg="#FFFFFF", fg="#333333",
+                                   relief="solid", bd=1, height=3, wrap=tk.WORD)
+        
+        # Add scrollbar for the text widget
+        comment_scrollbar = tk.Scrollbar(text_frame, orient=tk.VERTICAL, command=self.comment_text.yview)
+        self.comment_text.config(yscrollcommand=comment_scrollbar.set)
+        
+        # Pack text widget and scrollbar
+        self.comment_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        comment_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Bind comment text widget to save comment when it changes
+        self.comment_text.bind('<KeyRelease>', self.on_comment_change)
+        self.comment_text.bind('<FocusOut>', self.on_comment_change)
+        
+        # Track focus state for disabling keyboard shortcuts
+        self.comment_text.bind('<FocusIn>', self.on_comment_focus_in)
+        self.comment_text.bind('<FocusOut>', self.on_comment_focus_out)
+        self.comment_has_focus = False
+        
+        # Comment info label
+        self.comment_info_label = tk.Label(comment_section, text="💡 Add notes about the current image",
+                                          bg="#E3F2FD", font=("Arial", 9), fg="#666666",
+                                          justify=tk.LEFT, anchor="w")
+        self.comment_info_label.pack(fill=tk.X)
         
         # Auto monitoring section (moved from Monitor tab)
         auto_detect_section = tk.Frame(progress_tab, bg="#FFF3E0", relief="solid", bd=1, padx=6, pady=6)
@@ -749,6 +793,7 @@ class ImageLabelTool:
         self.all_image_paths.sort(key=self.get_image_sort_key)
         self.current_index = 0
         self.labels = {}  # Reset labels for new folder
+        self.comments = {}  # Reset comments for new folder
         
         # Initialize previously seen files with current files
         self.previously_seen_files = set(self.all_image_paths)
@@ -900,12 +945,34 @@ class ImageLabelTool:
         ocr_status = self.ocr_readable.get(path, False)
         self.ocr_readable_var.set(ocr_status)
         
+        # Update comment field with current image's comment
+        if hasattr(self, 'comment_text'):
+            comment_text = self.comments.get(path, "")
+            # Temporarily disable event bindings to prevent triggering on_comment_change during programmatic updates
+            self.comment_text.unbind('<KeyRelease>')
+            self.comment_text.unbind('<FocusOut>')
+            
+            # Clear and set the Text widget content
+            self.comment_text.delete("1.0", tk.END)
+            self.comment_text.insert("1.0", comment_text)
+            
+            # Re-bind the events after programmatic update is complete
+            self.comment_text.bind('<KeyRelease>', self.on_comment_change)
+            self.comment_text.bind('<FocusOut>', self.on_comment_change)
+            
+            # Update comment field state based on classification and filter status
+            self.update_comment_field_state()
+        
+        # Update current image filename in comment section
+        if hasattr(self, 'current_image_filename_var'):
+            filename = os.path.basename(path)
+            self.current_image_filename_var.set(f"📄 {filename}")
+        
         self.status_var.set(f"{os.path.basename(path)} ({self.current_index+1}/{len(self.image_paths)}) - {original_width}x{original_height}px")
         
         # Update progress and label status
         self.update_progress_display()
         self.update_current_label_status()
-        self.update_session_index_display()
         
         # Update navigation buttons
         self.update_navigation_buttons()
@@ -1008,9 +1075,11 @@ class ImageLabelTool:
                     self.show_image()
                     # Clear the input field after successful jump
                     self.jump_trigger_var.set("")
-                    return
-        
-        # If no image found with that trigger ID
+                self.comment_text.delete("1.0", tk.END)
+                self.comment_text.insert("1.0", comment_text)
+                # Re-bind comment change events
+                self.comment_text.bind('<KeyRelease>', self.on_comment_change)
+                self.comment_text.bind('<FocusOut>', self.on_comment_change)
         import tkinter.messagebox as messagebox
         messagebox.showinfo("Jump to Trigger ID", 
                            f"No image found with Trigger ID: {normalized_trigger_id}")
@@ -1036,9 +1105,6 @@ class ImageLabelTool:
             return
         path = self.image_paths[self.current_index]
         
-        # Assign session index if this is the first classification for this session
-        self.assign_session_index_if_needed(path)
-        
         self.labels[path] = self.label_var.get()
         self.save_csv()
         self.update_counts()
@@ -1046,7 +1112,9 @@ class ImageLabelTool:
         self.update_total_stats()
         self.update_progress_display()
         self.update_current_label_status()
-        self.update_session_index_display()
+        
+        # Update comment field state based on new classification status
+        self.update_comment_field_state()
         
         # Set image to fit-to-window mode after classification
         if self.scale_1to1:
@@ -1095,9 +1163,6 @@ class ImageLabelTool:
             return
         path = self.image_paths[self.current_index]
         
-        # Assign session index if this is the first classification for this session
-        self.assign_session_index_if_needed(path)
-        
         self.ocr_readable[path] = self.ocr_readable_var.get()
         self.save_csv()
         self.update_counts()
@@ -1105,40 +1170,42 @@ class ImageLabelTool:
         self.update_total_stats()
         self.update_progress_display()
         self.update_current_label_status()
-        self.update_session_index_display()
 
-    def assign_session_index_if_needed(self, image_path):
-        """Assign a session index to a session when it gets its first classification"""
-        session_id = self.get_session_number(image_path)
-        if not session_id:
-            return  # No session ID, can't assign index
-            
-        # Check if this session already has an index
-        if session_id in self.session_indices:
-            return  # Already has an index
-            
-        # Check if this session has any classified images (other than the current one being set)
-        session_has_classified_images = False
-        for path in self.all_image_paths:
-            if self.get_session_number(path) == session_id and path != image_path:
-                if path in self.labels and self.labels[path] != "(Unclassified)":
-                    session_has_classified_images = True
-                    break
-        
-        # If this is the first classification for this session, assign an index
-        if not session_has_classified_images:
-            self.session_indices[session_id] = self.next_session_index
-            self.next_session_index += 1
+    # Session index functionality removed - no longer used
+    # def assign_session_index_if_needed(self, image_path):
+    #     """Assign a session index to a session when it gets its first classification"""
+    #     session_id = self.get_session_number(image_path)
+    #     if not session_id:
+    #         return  # No session ID, can't assign index
+    #         
+    #     # Check if this session already has an index
+    #     if session_id in self.session_indices:
+    #         return  # Already has an index
+    #         
+    #     # Check if this session has any classified images (other than the current one being set)
+    #     session_has_classified_images = False
+    #     for path in self.all_image_paths:
+    #         if self.get_session_number(path) == session_id and path != image_path:
+    #             if path in self.labels and self.labels[path] != "(Unclassified)":
+    #                 session_has_classified_images = True
+    #                 break
+    #     
+    #     # If this is the first classification for this session, assign an index
+    #     if not session_has_classified_images:
+    #         self.session_indices[session_id] = self.next_session_index
+    #         self.next_session_index += 1
 
-    def get_session_index(self, image_path):
-        """Get the session index for an image, or None if session is unclassified"""
-        session_id = self.get_session_number(image_path)
-        if not session_id:
-            return None
-        return self.session_indices.get(session_id, None)
+    # def get_session_index(self, image_path):
+    #     """Get the session index for an image, or None if session is unclassified"""
+    #     session_id = self.get_session_number(image_path)
+    #     if not session_id:
+    #         return None
+    #     return self.session_indices.get(session_id, None)
 
     def label_shortcut_q(self, event=None):
         """Keyboard shortcut: Q for 'no label'"""
+        if self.should_ignore_keyboard_shortcuts_new():
+            return
         if self.image_paths:
             # Check if current image was unclassified before setting new label
             current_path = self.image_paths[self.current_index]
@@ -1153,6 +1220,8 @@ class ImageLabelTool:
 
     def label_shortcut_w(self, event=None):
         """Keyboard shortcut: W for 'read failure'"""
+        if self.should_ignore_keyboard_shortcuts_new():
+            return
         if self.image_paths:
             # Check if current image was unclassified before setting new label
             current_path = self.image_paths[self.current_index]
@@ -1167,6 +1236,8 @@ class ImageLabelTool:
 
     def label_shortcut_t(self, event=None):
         """Keyboard shortcut: T for 'OCR readable' checkbox toggle"""
+        if self.should_ignore_keyboard_shortcuts_new():
+            return
         if self.image_paths:
             # Toggle the OCR readable checkbox
             current_value = self.ocr_readable_var.get()
@@ -1175,6 +1246,8 @@ class ImageLabelTool:
 
     def label_shortcut_e(self, event=None):
         """Keyboard shortcut: E for 'incomplete'"""
+        if self.should_ignore_keyboard_shortcuts_new():
+            return
         if self.image_paths:
             # Check if current image was unclassified before setting new label
             current_path = self.image_paths[self.current_index]
@@ -1189,6 +1262,8 @@ class ImageLabelTool:
 
     def label_shortcut_r(self, event=None):
         """Keyboard shortcut: R for 'unreadable'"""
+        if self.should_ignore_keyboard_shortcuts_new():
+            return
         if self.image_paths:
             # Check if current image was unclassified before setting new label
             current_path = self.image_paths[self.current_index]
@@ -1203,18 +1278,26 @@ class ImageLabelTool:
 
     def prev_image_shortcut(self, event=None):
         """Keyboard shortcut: Left arrow for previous image"""
+        if self.should_ignore_keyboard_shortcuts():
+            return
         self.prev_image()
 
     def next_image_shortcut(self, event=None):
         """Keyboard shortcut: Right arrow for next image"""
+        if self.should_ignore_keyboard_shortcuts():
+            return
         self.next_image()
 
     def go_to_first_image_shortcut(self, event=None):
         """Keyboard shortcut: Home key for go to first image"""
+        if self.should_ignore_keyboard_shortcuts():
+            return
         self.go_to_first_image()
 
     def scale_1to1_shortcut(self, event=None):
         """Keyboard shortcut: Shift+O for 1:1 scale (always force true 1:1)"""
+        if self.should_ignore_keyboard_shortcuts():
+            return
         # Always force to true 1:1 scale regardless of current state
         self.scale_1to1 = True
         self.btn_1to1.config(text="Fit to Window", bg="#A5D6A7")
@@ -1225,6 +1308,8 @@ class ImageLabelTool:
 
     def fit_window_shortcut(self, event=None):
         """Keyboard shortcut: Shift+W for fit-to-window (always set to fit)"""
+        if self.should_ignore_keyboard_shortcuts():
+            return
         # Always set to fit mode regardless of current state
         if self.scale_1to1:
             self.scale_1to1 = False
@@ -1245,6 +1330,89 @@ class ImageLabelTool:
         self.apply_filter()
         self.update_filter_button_state()
         self.update_jump_button_state()
+        # Update comment field state when filter changes
+        self.update_comment_field_state()
+
+    def on_comment_change(self, *args):
+        """Called when the comment text field changes"""
+        if hasattr(self, 'image_paths') and self.image_paths and self.current_index < len(self.image_paths):
+            current_path = self.image_paths[self.current_index]
+            # Get text from Text widget instead of StringVar
+            comment_text = self.comment_text.get("1.0", tk.END).strip()
+            
+            # Store comment for current image
+            if comment_text:
+                self.comments[current_path] = comment_text
+            else:
+                # Remove empty comments
+                if current_path in self.comments:
+                    del self.comments[current_path]
+            
+            # Save CSV immediately when comment changes
+            self.save_csv()
+
+    def on_comment_focus_in(self, event=None):
+        """Called when comment text widget gains focus"""
+        # Only allow focus if image is classified AND not in "All images" mode
+        is_all_images_filter = self.filter_var.get() == "All images"
+        if self.is_current_image_unclassified() or is_all_images_filter:
+            # Remove focus from comment field if image is unclassified or in All images mode
+            self.root.focus_set()  # Set focus back to main window
+            return
+        self.comment_has_focus = True
+
+    def on_comment_focus_out(self, event=None):
+        """Called when comment text widget loses focus"""
+        self.comment_has_focus = False
+        # Also save comment when focus is lost
+        self.on_comment_change()
+
+    def should_ignore_keyboard_shortcuts(self):
+        """Check if keyboard shortcuts should be ignored (e.g., when typing in comment field)"""
+        return getattr(self, 'comment_has_focus', False)
+
+    def is_current_image_unclassified(self):
+        """Check if the current image is unclassified"""
+        if not hasattr(self, 'image_paths') or not self.image_paths or self.current_index >= len(self.image_paths):
+            return False
+        
+        current_path = self.image_paths[self.current_index]
+        return current_path not in self.labels or self.labels[current_path] == "(Unclassified)"
+
+    def should_ignore_keyboard_shortcuts_new(self):
+        """Check if keyboard shortcuts should be ignored"""
+        # Ignore if typing in comment field
+        if getattr(self, 'comment_has_focus', False):
+            return True
+        
+        # Ignore if current image is already classified (only allow shortcuts on unclassified images)
+        if not self.is_current_image_unclassified():
+            return True
+            
+        return False
+
+    def update_comment_field_state(self):
+        """Update comment field enabled/disabled state based on classification status and filter"""
+        if hasattr(self, 'comment_text'):
+            # Disable comment field if image is unclassified OR if viewing "All images"
+            is_all_images_filter = self.filter_var.get() == "All images"
+            is_unclassified = self.is_current_image_unclassified()
+            
+            if is_unclassified and not is_all_images_filter:
+                # Disable for unclassified images (when not in All images mode)
+                self.comment_text.config(state='disabled', bg='#F0F0F0', fg='#888888')
+                if hasattr(self, 'comment_info_label'):
+                    self.comment_info_label.config(text="💡 Classify image first to add comments", fg="#888888")
+            elif is_all_images_filter:
+                # Disable for All images filter mode
+                self.comment_text.config(state='disabled', bg='#F0F0F0', fg='#888888')
+                if hasattr(self, 'comment_info_label'):
+                    self.comment_info_label.config(text="💡 Comments disabled in 'All images' view", fg="#888888")
+            else:
+                # Enable comment field for classified images in filtered views
+                self.comment_text.config(state='normal', bg='#FFFFFF', fg='#333333')
+                if hasattr(self, 'comment_info_label'):
+                    self.comment_info_label.config(text="💡 Add notes about the current image", fg="#666666")
 
     def update_jump_button_state(self):
         """Enable/disable jump functionality based on current filter"""
@@ -1714,9 +1882,10 @@ class ImageLabelTool:
         output.append(f"Number of No-Code sessions: {analysis_data['no_code_count']}")
         output.append(f"Number of Read-Failure sessions: {analysis_data['read_failure_count']}")
         
-        # Calculate total unreadable (excluding OCR readable since they are readable)
+        # Calculate total unreadable using same formula as Analysis tab
         ocr_readable_count = analysis_data.get('ocr_readable_count', 0)
-        total_unreadable = fail_reading_parcels - analysis_data['no_code_count'] - analysis_data['read_failure_count'] - ocr_readable_count
+        # Use consistent formula: total_sessions - sessions_no_code - sessions_read_failure
+        total_unreadable = len(self.calculate_session_labels()) - analysis_data['no_code_count'] - analysis_data['read_failure_count']
         if total_unreadable < 0:
             total_unreadable = 0
             
@@ -2118,8 +2287,9 @@ class ImageLabelTool:
             report_lines.append(f"Number of No-Code sessions: {analysis_data['no_code_count']}")
             report_lines.append(f"Number of Read-Failure sessions: {analysis_data['read_failure_count']}")
             
-            # Calculate total unreadable
-            total_unreadable = fail_reading_parcels - analysis_data['no_code_count'] - analysis_data['read_failure_count']
+            # Calculate total unreadable using same formula as Analysis tab
+            # Use consistent formula: total_sessions - sessions_no_code - sessions_read_failure
+            total_unreadable = len(self.calculate_session_labels()) - analysis_data['no_code_count'] - analysis_data['read_failure_count']
             if total_unreadable < 0:
                 total_unreadable = 0
                 
@@ -2281,8 +2451,6 @@ class ImageLabelTool:
         self.update_session_stats()
         self.update_total_stats()
         self.update_progress_display()
-        if self.image_paths:  # Only update if there are images loaded
-            self.update_session_index_display()
         
         # Update navigation buttons
         self.update_navigation_buttons()
@@ -2321,8 +2489,8 @@ class ImageLabelTool:
         self._load_csv_file(self.csv_filename)
 
     def _load_csv_file(self, filepath):
-        """Helper method to load CSV file and restore session indices"""
-        max_session_index = 0
+        """Helper method to load CSV file"""
+        # max_session_index = 0  # Session index tracking removed
         
         with open(filepath, newline='', encoding='utf-8') as f:
             reader = csv.reader(f)
@@ -2346,6 +2514,11 @@ class ImageLabelTool:
                         except (ValueError, TypeError):
                             ocr_readable = False  # Default to False if parsing fails
                     
+                    # Read Comment if available (4th column, index 3)
+                    comment = ""
+                    if len(row) >= 4:
+                        comment = row[3].strip()
+                    
                     # Convert relative path back to absolute path if needed
                     if hasattr(self, 'folder_path') and self.folder_path:
                         if os.path.isabs(stored_path):
@@ -2362,20 +2535,21 @@ class ImageLabelTool:
                     
                     self.labels[image_path] = image_label
                     self.ocr_readable[image_path] = ocr_readable
+                    self.comments[image_path] = comment
                     
-                    # If session_index column exists and has a value, restore the session index
-                    if len(row) >= 7 and row[6]:  # session_index is now 7th column (index 6)
-                        try:
-                            session_index = int(row[6])
-                            session_id = self.get_session_number(image_path)
-                            if session_id:
-                                self.session_indices[session_id] = session_index
-                                max_session_index = max(max_session_index, session_index)
-                        except (ValueError, TypeError):
-                            pass  # Skip invalid session index values
+                    # Session index loading logic removed - no longer used
+                    # if len(row) >= 8 and row[7]:  # session_index is now 8th column (index 7)
+                    #     try:
+                    #         session_index = int(row[7])
+                    #         session_id = self.get_session_number(image_path)
+                    #         if session_id:
+                    #             self.session_indices[session_id] = session_index
+                    #             max_session_index = max(max_session_index, session_index)
+                    #     except (ValueError, TypeError):
+                    #         pass  # Skip invalid session index values
         
-        # Set next_session_index to be one more than the highest existing index
-        self.next_session_index = max_session_index + 1
+        # Session index tracking removed
+        # self.next_session_index = max_session_index + 1
 
     def save_csv(self):
         if not self.csv_filename:
@@ -2385,7 +2559,7 @@ class ImageLabelTool:
             with open(self.csv_filename, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 # Write header
-                writer.writerow(['image_path', 'image_label', 'OCR_Readable', 'session_number', 'session_label', 'session_OCR_readable', 'session_index'])
+                writer.writerow(['image_path', 'image_label', 'OCR_Readable', 'Comment', 'session_number', 'session_label', 'session_OCR_readable', 'session_index'])
                 
                 # Calculate current session labels
                 session_labels_dict = self.calculate_session_labels()
@@ -2410,9 +2584,10 @@ class ImageLabelTool:
                     session_id = self.get_session_number(path)
                     session_label = session_labels_dict.get(session_id, "no label") if session_id else "no label"
                     session_ocr_readable = session_ocr_readable_dict.get(session_id, False) if session_id else False
-                    session_index = self.get_session_index(path)
+                    # session_index functionality removed
                     ocr_readable = self.ocr_readable.get(path, False)
-                    writer.writerow([relative_path, label, ocr_readable, session_id or "", session_label, session_ocr_readable, session_index or ""])
+                    comment = self.comments.get(path, "")
+                    writer.writerow([relative_path, label, ocr_readable, comment, session_id or "", session_label, session_ocr_readable, ""])
             
             # Also generate statistics CSV file
             self.save_stats_csv()
@@ -3260,19 +3435,20 @@ class ImageLabelTool:
             self.label_status_var.set("○ UNCLASSIFIED")
             self.label_status_label.config(fg="#EF9A9A")  # Soft red
     
-    def update_session_index_display(self):
-        """Update the session index display for current image."""
-        if not self.image_paths:
-            self.session_index_var.set("")
-            return
-        
-        current_path = self.image_paths[self.current_index]
-        session_index = self.get_session_index(current_path)
-        
-        if session_index is not None:
-            self.session_index_var.set(f"Session Index: {session_index}")
-        else:
-            self.session_index_var.set("Session Index: None")
+    # Session index display method removed - no longer used
+    # def update_session_index_display(self):
+    #     """Update the session index display for current image."""
+    #     if not self.image_paths:
+    #         self.session_index_var.set("")
+    #         return
+    #     
+    #     current_path = self.image_paths[self.current_index]
+    #     session_index = self.get_session_index(current_path)
+    #     
+    #     if session_index is not None:
+    #         self.session_index_var.set(f"Session Index: {session_index}")
+    #     else:
+    #         self.session_index_var.set("Session Index: None")
 
     def get_session_number(self, image_path):
         """Extract the group ID from filename using ID (first part) + Timestamp (last part)"""
@@ -3961,6 +4137,8 @@ class ImageLabelTool:
             # Update labels dictionary
             if not hasattr(self, 'labels'):
                 self.labels = {}
+            if not hasattr(self, 'comments'):
+                self.comments = {}
             self.labels[image_path] = label
             
             # If this is the currently displayed image, refresh the display immediately
@@ -4056,6 +4234,8 @@ class ImageLabelTool:
             # Update labels dictionary
             if not hasattr(self, 'labels'):
                 self.labels = {}
+            if not hasattr(self, 'comments'):
+                self.comments = {}
             self.labels[file_path] = label
             
             # Save to CSV and update stats
@@ -4561,6 +4741,8 @@ class ImageLabelTool:
             # Update labels dictionary
             if not hasattr(self, 'labels'):
                 self.labels = {}
+            if not hasattr(self, 'comments'):
+                self.comments = {}
             self.labels[image_path] = label
             
             # If this is the currently displayed image, refresh the display immediately

@@ -8,6 +8,8 @@ A professional image labeling tool for efficient review and categorization of im
 
 ✅ **Smart Image Loading** - Automatically filters images with `_number` naming pattern  
 ✅ **Fast Labeling** - Color-coded radio buttons for quick classification  
+✅ **OCR Recovery Tracking** - Separate checkbox for marking OCR-recovered images
+✅ **Image Comments** - Add custom notes/comments for each image in the Progress tab
 ✅ **Parcel Grouping** - Groups images by number suffix with intelligent labeling rules  
 ✅ **CSV Export** - Timestamped CSV files with image and parcel information  
 ✅ **Progress Tracking** - Real-time statistics with percentage calculations  
@@ -79,15 +81,14 @@ Images must follow the pattern: `basename_number.extension`
 
 The tool creates timestamped CSV files in the selected folder:
 - Filename: `revision_YYYYMMDD_HHMMSS.csv`
-- Contains: image path, image label, parcel number, parcel label
+- Contains: image path, image label, OCR status, comments, session number, session label, session OCR status, session index
 
 **Example CSV:**
 ```csv
-image_path,image_label,parcel_number,parcel_label
-/path/to/doc_1.jpg,no label,1,no label
-/path/to/page_1.png,no label,1,no label
-/path/to/doc_2.jpg,no read,2,no read
-/path/to/page_2.png,unreadable,2,no read
+image_path,image_label,OCR_Readable,Comment,session_number,session_label,session_OCR_readable,session_index
+images/doc_001_123456.jpg,no label,False,Blurry image,001_123456,no label,False,1
+images/doc_001_123456.jpg,read failure,True,Code partially visible,001_123456,read failure,True,1
+images/doc_002_789012.jpg,unreadable,False,Damaged label area,002_789012,unreadable,False,2
 ```
 
 ## Building Executable
