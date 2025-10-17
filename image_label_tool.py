@@ -162,7 +162,7 @@ class ImageLabelTool:
         # Total number of sessions input (right side)
         total_frame = tk.Frame(top_frame, bg="#FAFAFA")
         total_frame.pack(side=tk.RIGHT)
-        tk.Label(total_frame, text="Total number of sessions:", bg="#FAFAFA", font=("Arial", 11)).pack(side=tk.LEFT)
+        tk.Label(total_frame, text="Number of effective sessions:", bg="#FAFAFA", font=("Arial", 11)).pack(side=tk.LEFT)
         self.total_sessions_var = tk.StringVar()
         self.total_sessions_entry = tk.Entry(total_frame, textvariable=self.total_sessions_var, width=8,
                                           font=("Arial", 11), bg="white", relief="solid", bd=1)
@@ -1856,7 +1856,7 @@ class ImageLabelTool:
         
         # LOG FILE ANALYSIS section
         output.append("=== LOG FILE ANALYSIS ===")
-        output.append(f"Number of failed sessions: {results['unique_ids']}")
+        output.append(f"Number of sessions: {results['unique_ids']}")
         
         # Calculate read vs noread sessions
         total_noread = results.get('total_noread', 0)
@@ -2260,7 +2260,7 @@ class ImageLabelTool:
             # LOG FILE ANALYSIS section
             report_lines.append("LOG FILE ANALYSIS")
             report_lines.append("-" * 20)
-            report_lines.append(f"Number of failed sessions: {results['unique_ids']}")
+            report_lines.append(f"Number of sessions: {results['unique_ids']}")
             
             # Calculate read vs noread sessions
             total_noread = results.get('total_noread', 0)
