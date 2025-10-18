@@ -28,7 +28,7 @@ except ImportError:
     sns = None
 
 # Application version
-VERSION = "2.1.1"
+VERSION = "2.1.2"
 
 LABELS = ["(Unclassified)", "no label", "read failure", "incomplete", "unreadable"]
 
@@ -232,6 +232,15 @@ class ImageLabelTool:
                                    bg="#CE93D8", fg="white", font=("Arial", 12, "bold"),
                                    padx=6, pady=2, relief="flat", width=2)
         self.btn_zoom_in.pack(side=tk.LEFT, padx=(0, 15))
+
+        # Histogram equalization checkbox
+        self.histogram_eq_enabled = tk.BooleanVar(value=False)
+        self.histogram_eq_checkbox = tk.Checkbutton(toolbar_frame, text="📊 Hist EQ (Shift+H)", 
+                                                   variable=self.histogram_eq_enabled,
+                                                   command=self.on_histogram_eq_changed,
+                                                   bg="#E8E8E8", font=("Arial", 9, "bold"),
+                                                   selectcolor="white", padx=5, pady=2)
+        self.histogram_eq_checkbox.pack(side=tk.LEFT, padx=(0, 10))
 
         # Export button for current filter
         self.btn_gen_filter_folder = tk.Button(toolbar_frame, text="Gen Filter Folder", 
@@ -547,6 +556,13 @@ class ImageLabelTool:
                                            relief="raised", bd=2, padx=8, pady=3, state='disabled')
         self.btn_select_log_file.pack(side=tk.LEFT)
         
+        # Refresh button next to the select button
+        self.btn_refresh_log = tk.Button(select_button_frame, text="🔄 Refresh", 
+                                        command=self.refresh_log_analysis,
+                                        bg="#4CAF50", fg="white", font=("Arial", 10, "bold"),
+                                        relief="raised", bd=2, padx=8, pady=3, state='disabled')
+        self.btn_refresh_log.pack(side=tk.LEFT, padx=(5, 0))
+        
         # Selected file label
         self.selected_log_file_var = tk.StringVar(value="No file selected")
         self.selected_log_file_label = tk.Label(log_file_section, textvariable=self.selected_log_file_var,
@@ -677,6 +693,10 @@ class ImageLabelTool:
         # Bind Shift+W for fit-to-window
         self.root.bind('<Shift-W>', self.fit_window_shortcut)
         self.root.bind('<Shift-w>', self.fit_window_shortcut)
+        
+        # Bind Shift+H for histogram equalization toggle
+        self.root.bind('<Shift-H>', self.histogram_eq_shortcut)
+        self.root.bind('<Shift-h>', self.histogram_eq_shortcut)
         
         # Set focus to root window to capture keyboard events
         self.root.focus_set()
@@ -839,16 +859,26 @@ class ImageLabelTool:
             return (0, 0)
 
     def update_log_file_button_state(self):
-        """Enable/disable the log file selection button based on folder selection"""
+        """Enable/disable the log file selection and refresh buttons based on folder selection"""
         if not hasattr(self, 'btn_select_log_file'):
             return
             
         if hasattr(self, 'folder_path') and self.folder_path:
-            # Enable the button when a folder is selected
+            # Enable the select button when a folder is selected
             self.btn_select_log_file.config(state='normal', bg="#9C27B0", fg="white")
+            
+            # Enable refresh button only if a log file has been loaded
+            if hasattr(self, 'btn_refresh_log'):
+                if hasattr(self, 'current_log_content') and self.current_log_content:
+                    self.btn_refresh_log.config(state='normal', bg="#4CAF50", fg="white")
+                else:
+                    self.btn_refresh_log.config(state='disabled', bg="#CCCCCC", fg="#666666")
         else:
-            # Disable the button when no folder is selected
+            # Disable both buttons when no folder is selected
             self.btn_select_log_file.config(state='disabled', bg="#CCCCCC", fg="#666666")
+            if hasattr(self, 'btn_refresh_log'):
+                self.btn_refresh_log.config(state='disabled', bg="#CCCCCC", fg="#666666")
+            
             # Clear any previous log file selection
             self.selected_log_file_var.set("No file selected")
             # Clear log results
@@ -866,6 +896,10 @@ class ImageLabelTool:
         path = self.image_paths[self.current_index]
         img = Image.open(path)
         original_width, original_height = img.size
+        
+        # Apply histogram equalization if enabled
+        if hasattr(self, 'histogram_eq_enabled') and self.histogram_eq_enabled.get():
+            img = self.apply_histogram_equalization(img)
         
         # Clear previous image
         self.canvas.delete("all")
@@ -1171,6 +1205,12 @@ class ImageLabelTool:
         self.update_progress_display()
         self.update_current_label_status()
 
+    def on_histogram_eq_changed(self):
+        """Handle histogram equalization checkbox changes"""
+        # Refresh the current image display to apply/remove histogram equalization
+        if hasattr(self, 'image_paths') and self.image_paths:
+            self.show_image()
+
     # Session index functionality removed - no longer used
     # def assign_session_index_if_needed(self, image_path):
     #     """Assign a session index to a session when it gets its first classification"""
@@ -1318,6 +1358,17 @@ class ImageLabelTool:
             # Refresh the current image display
             if hasattr(self, 'image_paths') and self.image_paths:
                 self.show_image()
+
+    def histogram_eq_shortcut(self, event=None):
+        """Keyboard shortcut: Shift+H for histogram equalization toggle"""
+        if self.should_ignore_keyboard_shortcuts():
+            return
+        # Toggle the histogram equalization checkbox
+        if hasattr(self, 'histogram_eq_enabled'):
+            current_value = self.histogram_eq_enabled.get()
+            self.histogram_eq_enabled.set(not current_value)
+            # Trigger the callback to refresh the image
+            self.on_histogram_eq_changed()
 
     def on_total_changed(self, event=None):
         """Called when the total sessions field changes"""
@@ -1674,12 +1725,57 @@ class ImageLabelTool:
             # Display results
             self.display_log_analysis_results(analysis_results)
             
+            # Enable the refresh button now that we have log content
+            self.update_log_file_button_state()
+            
         except Exception as e:
             # Display error message
             self.log_results_text.config(state=tk.NORMAL)
             self.log_results_text.delete(1.0, tk.END)
             self.log_results_text.insert(tk.END, f"Error analyzing log file:\n{str(e)}")
             self.log_results_text.config(state=tk.DISABLED)
+    
+    def refresh_log_analysis(self):
+        """Refresh the log analysis by reloading the current log file and recalculating all values"""
+        if not hasattr(self, 'current_log_content') or not self.current_log_content:
+            messagebox.showwarning("No Log File", "Please select a log file first before refreshing.")
+            return
+            
+        try:
+            # Clear previous results
+            self.log_results_text.config(state=tk.NORMAL)
+            self.log_results_text.delete(1.0, tk.END)
+            self.log_results_text.insert(tk.END, "Refreshing analysis...\n")
+            self.log_results_text.config(state=tk.DISABLED)
+            
+            # Force update the UI
+            self.root.update()
+            
+            # Re-analyze the stored log content
+            analysis_results = self.parse_log_content(self.current_log_content)
+            
+            # Force recalculation of all session and image statistics
+            self.update_counts()
+            self.update_session_stats() 
+            self.update_total_stats()
+            self.update_progress_display()
+            
+            # Display refreshed results
+            self.display_log_analysis_results(analysis_results)
+            
+            # Show success message in the log results area temporarily
+            current_text = self.log_results_text.get(1.0, tk.END)
+            self.log_results_text.config(state=tk.NORMAL)
+            self.log_results_text.insert(1.0, "✓ Analysis refreshed successfully!\n\n")
+            self.log_results_text.config(state=tk.DISABLED)
+            
+        except Exception as e:
+            # Display error message
+            self.log_results_text.config(state=tk.NORMAL)
+            self.log_results_text.delete(1.0, tk.END)
+            self.log_results_text.insert(tk.END, f"Error refreshing log analysis:\n{str(e)}")
+            self.log_results_text.config(state=tk.DISABLED)
+            messagebox.showerror("Refresh Error", f"Failed to refresh log analysis:\n{str(e)}")
     
     def parse_log_content(self, log_content):
         """Parse log content and extract statistics"""
@@ -3797,6 +3893,57 @@ class ImageLabelTool:
         label = tk.Label(parent_frame, text="📊 Charts have been disabled\nfor better stability",
                        font=("Arial", 14), bg="#FAFAFA", fg="#666666")
         label.pack(expand=True)
+
+    def apply_histogram_equalization(self, img):
+        """Apply histogram equalization to enhance image contrast"""
+        try:
+            # Convert PIL image to numpy array for OpenCV processing
+            import numpy as np
+            
+            # Convert to RGB if not already (PIL images are RGB by default)
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Convert PIL image to numpy array
+            img_array = np.array(img)
+            
+            # Convert RGB to BGR for OpenCV (OpenCV uses BGR)
+            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            
+            # Convert to grayscale for histogram equalization
+            gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+            
+            # Apply histogram equalization
+            equalized = cv2.equalizeHist(gray)
+            
+            # Convert back to BGR color by replicating the equalized grayscale to all channels
+            # This creates a grayscale image with better contrast
+            equalized_bgr = cv2.cvtColor(equalized, cv2.COLOR_GRAY2BGR)
+            
+            # For color images, apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to each channel
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            
+            # Split BGR channels and apply CLAHE to each
+            b, g, r = cv2.split(img_bgr)
+            b_eq = clahe.apply(b)
+            g_eq = clahe.apply(g)
+            r_eq = clahe.apply(r)
+            
+            # Merge channels back
+            equalized_color = cv2.merge([b_eq, g_eq, r_eq])
+            
+            # Convert back to RGB for PIL
+            equalized_rgb = cv2.cvtColor(equalized_color, cv2.COLOR_BGR2RGB)
+            
+            # Convert numpy array back to PIL image
+            equalized_img = Image.fromarray(equalized_rgb)
+            
+            return equalized_img
+            
+        except Exception as e:
+            # If histogram equalization fails, return original image
+            print(f"Histogram equalization failed: {e}")
+            return img
 
     def toggle_1to1_scale(self):
         """Toggle between fitted view and 1:1 scale view"""
