@@ -4551,19 +4551,25 @@ class ImageLabelTool:
         messagebox.showerror("Copy Error", f"Failed to copy images:\n{error_message}")
 
     def generate_sessions_csv(self):
-        """Generate a CSV file containing unique session IDs from all images"""
+        """Generate CSV files containing unique session IDs grouped by classification category"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             messagebox.showwarning("No Images", "Please select a folder with images first.")
             return
         
-        # Extract unique session IDs
-        session_ids = set()
+        # Dictionary to store session IDs by category
+        sessions_by_category = {
+            'no label': set(),
+            'read failure': set(),
+            'incomplete': set(),
+            'unreadable': set(),
+            'unlabeled': set()  # For images without any classification
+        }
         
         # Progress setup
         self.btn_gen_sessions_csv.config(state='disabled', text="Generating...")
-        self.auto_detect_progress_var.set("Extracting session IDs from images...")
+        self.auto_detect_progress_var.set("Extracting session IDs by category...")
         
-        # Collect session IDs from all images
+        # Collect session IDs from all images, grouped by classification
         for i, image_path in enumerate(self.all_image_paths):
             filename = os.path.basename(image_path)
             
@@ -4576,31 +4582,63 @@ class ImageLabelTool:
             # Extract session ID from filename
             session_id = self.extract_session_id_from_filename(filename)
             if session_id:
-                session_ids.add(session_id)
-        
-        # Sort session IDs for consistent output
-        sorted_session_ids = sorted(session_ids)
+                # Get the classification for this image
+                classification = self.labels.get(image_path, 'unlabeled')
+                
+                # Add session ID to appropriate category
+                if classification in sessions_by_category:
+                    sessions_by_category[classification].add(session_id)
+                else:
+                    sessions_by_category['unlabeled'].add(session_id)
         
         try:
-            # Create CSV file
+            # Create timestamp for consistent file naming
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            csv_filename = f"sessions_{timestamp}.csv"
-            csv_path = os.path.join(self.folder_path, csv_filename)
             
-            # Write CSV
-            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+            created_files = []
+            total_sessions = 0
+            
+            # Generate CSV file for each category that has sessions
+            for category, session_ids in sessions_by_category.items():
+                if session_ids:  # Only create CSV if there are sessions in this category
+                    # Sort session IDs for consistent output
+                    sorted_session_ids = sorted(session_ids)
+                    
+                    # Create category-specific filename
+                    safe_category = category.replace(' ', '_').replace('/', '_')
+                    csv_filename = f"sessions_{safe_category}_{timestamp}.csv"
+                    csv_path = os.path.join(self.folder_path, csv_filename)
+                    
+                    # Write CSV
+                    with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(['session_id', 'category'])  # Header with category info
+                        for session_id in sorted_session_ids:
+                            writer.writerow([session_id, category])
+                    
+                    created_files.append((csv_filename, len(sorted_session_ids), category))
+                    total_sessions += len(sorted_session_ids)
+            
+            # Also create a combined summary file
+            summary_filename = f"sessions_summary_{timestamp}.csv"
+            summary_path = os.path.join(self.folder_path, summary_filename)
+            
+            with open(summary_path, 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.writer(csvfile)
-                writer.writerow(['session_id'])  # Header
-                for session_id in sorted_session_ids:
-                    writer.writerow([session_id])
+                writer.writerow(['category', 'unique_sessions', 'filename'])  # Summary header
+                for filename, session_count, category in created_files:
+                    writer.writerow([category, session_count, filename])
+            
+            created_files.append((summary_filename, len(created_files), 'summary'))
             
             # Completion
-            self.auto_detect_progress_var.set(f"Generated sessions CSV:\n{csv_filename}")
+            files_list = '\n'.join([f"• {filename} ({count} sessions)" for filename, count, _ in created_files])
+            self.auto_detect_progress_var.set(f"Generated {len(created_files)} CSV files")
             self.btn_gen_sessions_csv.config(state='normal', text="Gen Sessions CSV")
             
-            messagebox.showinfo("CSV Generated", 
-                              f"Successfully generated CSV with {len(sorted_session_ids)} unique session IDs:\n{csv_filename}")
+            messagebox.showinfo("CSV Files Generated", 
+                              f"Successfully generated {len(created_files)} CSV files:\n\n{files_list}\n\nTotal unique sessions processed: {total_sessions}")
             
         except Exception as e:
             self.btn_gen_sessions_csv.config(state='normal', text="Gen Sessions CSV")
