@@ -1865,7 +1865,7 @@ class ImageLabelTool:
         
         # Initialize counters and tracking lists
         unique_ids = set()
-        false_triggers = 0
+        false_triggers = 0  # Only count 'noread' with no saved image
         timeouts = 0
         total_entries = 0
         total_noread = 0         # Track total NOREAD entries
@@ -1877,13 +1877,7 @@ class ImageLabelTool:
         
         # Patterns to look for
         id_pattern = r'ID:\s*(\d+)'  # Look for "ID: " followed by digits
-        false_trigger_patterns = [
-            r'false.trigger',
-            r'no.code.detected',
-            r'empty.result',
-            r'detection.failed'
-            # Note: removed 'noread' from here - we'll handle NOREAD separately
-        ]
+        # false_trigger_patterns removed: only 'noread' with no saved image is counted
         timeout_patterns = [
             r'timeout',
             r'timed.out',
@@ -1906,26 +1900,16 @@ class ImageLabelTool:
                 unique_ids.add(id_match)
                 current_line_ids.append(id_match)
             
-            # Check for false triggers in lowercase
+            # Only count 'noread' with no saved image as false trigger
             is_false_trigger = False
-            for pattern in false_trigger_patterns:
-                if re.search(pattern, line_lower):
-                    false_triggers += 1
-                    is_false_trigger = True
-                    # Add all IDs from this line to missed triggers
-                    for id_val in current_line_ids:
-                        missed_trigger_ids.append(id_val)
-                    break
-            
-            # Special handling for NOREAD - only consider it a missed trigger if no saved image exists
-            if not is_false_trigger and 'noread' in line_lower:
-                total_noread += 1  # Count all NOREAD entries
+            if 'noread' in line_lower:
                 for id_val in current_line_ids:
-                    # Only mark as missed trigger if there's no corresponding saved image
                     if id_val not in saved_image_ids:
                         false_triggers += 1
                         missed_trigger_ids.append(id_val)
                         is_false_trigger = True
+                    else:
+                        total_noread += 1  # Only count as real No-Read if image exists
             
             # Check for timeouts in lowercase (only if not already a false trigger)
             if not is_false_trigger:
@@ -2026,12 +2010,8 @@ class ImageLabelTool:
         # READING ANALYSIS section
         output.append("=== READING ANALYSIS ===")
         
-        # Calculate fail reading parcels (NOREAD minus missed triggers)
-        fail_reading_parcels = total_noread - results['false_triggers']
-        if fail_reading_parcels < 0:
-            fail_reading_parcels = 0
-            
-        output.append(f"Number of Failed sessions: {fail_reading_parcels}")
+        # Number of Failed sessions is now equal to Number of No-Read sessions
+        output.append(f"Number of Failed sessions: {total_noread}")
         output.append(f"Number of No-Code sessions: {analysis_data['no_code_count']}")
         output.append(f"Number of Read-Failure sessions: {analysis_data['read_failure_count']}")
         
