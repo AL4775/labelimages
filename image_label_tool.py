@@ -247,7 +247,14 @@ class ImageLabelTool:
                                              command=self.generate_filter_folder,
                                              bg="#9C27B0", fg="white", font=("Arial", 10, "bold"),
                                              padx=8, pady=3, relief="flat")
-        self.btn_gen_filter_folder.pack(side=tk.LEFT, padx=(0, 10))
+        self.btn_gen_filter_folder.pack(side=tk.LEFT, padx=(0, 5))
+
+        # Export button for session IDs CSV
+        self.btn_gen_sessions_csv = tk.Button(toolbar_frame, text="Gen Sessions CSV", 
+                                            command=self.generate_sessions_csv,
+                                            bg="#FF5722", fg="white", font=("Arial", 10, "bold"),
+                                            padx=8, pady=3, relief="flat")
+        self.btn_gen_sessions_csv.pack(side=tk.LEFT, padx=(0, 10))
 
         # Main content area - horizontal layout (now without left panel)
         content_frame = tk.Frame(main_frame, bg="#FAFAFA")
@@ -4542,6 +4549,93 @@ class ImageLabelTool:
         # Show error message
         self.auto_detect_progress_var.set("Copy failed!")
         messagebox.showerror("Copy Error", f"Failed to copy images:\n{error_message}")
+
+    def generate_sessions_csv(self):
+        """Generate a CSV file containing unique session IDs from all images"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            messagebox.showwarning("No Images", "Please select a folder with images first.")
+            return
+        
+        # Extract unique session IDs
+        session_ids = set()
+        
+        # Progress setup
+        self.btn_gen_sessions_csv.config(state='disabled', text="Generating...")
+        self.auto_detect_progress_var.set("Extracting session IDs from images...")
+        
+        # Collect session IDs from all images
+        for i, image_path in enumerate(self.all_image_paths):
+            filename = os.path.basename(image_path)
+            
+            # Update progress periodically
+            if i % 100 == 0:
+                progress_text = f"Processing {i+1}/{len(self.all_image_paths)} images..."
+                self.auto_detect_progress_var.set(progress_text)
+                self.root.update_idletasks()
+            
+            # Extract session ID from filename
+            session_id = self.extract_session_id_from_filename(filename)
+            if session_id:
+                session_ids.add(session_id)
+        
+        # Sort session IDs for consistent output
+        sorted_session_ids = sorted(session_ids)
+        
+        try:
+            # Create CSV file
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            csv_filename = f"sessions_{timestamp}.csv"
+            csv_path = os.path.join(self.folder_path, csv_filename)
+            
+            # Write CSV
+            with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(['session_id'])  # Header
+                for session_id in sorted_session_ids:
+                    writer.writerow([session_id])
+            
+            # Completion
+            self.auto_detect_progress_var.set(f"Generated sessions CSV:\n{csv_filename}")
+            self.btn_gen_sessions_csv.config(state='normal', text="Gen Sessions CSV")
+            
+            messagebox.showinfo("CSV Generated", 
+                              f"Successfully generated CSV with {len(sorted_session_ids)} unique session IDs:\n{csv_filename}")
+            
+        except Exception as e:
+            self.btn_gen_sessions_csv.config(state='normal', text="Gen Sessions CSV")
+            self.auto_detect_progress_var.set("CSV generation failed!")
+            messagebox.showerror("CSV Error", f"Failed to generate sessions CSV:\n{str(e)}")
+
+    def extract_session_id_from_filename(self, filename):
+        """Extract session ID from filename based on known patterns"""
+        # Remove file extension
+        name_without_ext = os.path.splitext(filename)[0]
+        
+        # Common patterns for session ID extraction
+        # Pattern 1: SessionID_TriggerID_... (e.g., "12345_001_image.jpg" -> session "12345")
+        # Pattern 2: Complex patterns like "12345_001_20240101_120000.jpg"
+        
+        parts = name_without_ext.split('_')
+        
+        if len(parts) >= 2:
+            # First part is typically the session ID
+            potential_session_id = parts[0]
+            
+            # Validate that it looks like a session ID (numeric or alphanumeric)
+            if potential_session_id and (potential_session_id.isdigit() or potential_session_id.isalnum()):
+                return potential_session_id
+        
+        # If standard pattern doesn't work, try other common patterns
+        # Some files might have format like "IMG_sessionID_triggerID.jpg"
+        if filename.upper().startswith('IMG_') and len(parts) >= 3:
+            return parts[1]  # Second part after IMG_
+        
+        # Fallback: return first part if it seems valid
+        if parts and parts[0] and (parts[0].isdigit() or parts[0].isalnum()):
+            return parts[0]
+        
+        return None
 
     def start_auto_timer(self):
         """Start the auto-timer for periodic auto detection"""
