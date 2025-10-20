@@ -1120,6 +1120,7 @@ class ImageLabelTool:
                     self.show_image()
                     # Clear the input field after successful jump
                     self.jump_trigger_var.set("")
+                comment_text = self.comments.get(self.image_paths[self.current_index], "")
                 self.comment_text.delete("1.0", tk.END)
                 self.comment_text.insert("1.0", comment_text)
                 # Re-bind comment change events
@@ -2011,19 +2012,24 @@ class ImageLabelTool:
         output.append("=== READING ANALYSIS ===")
         
         # Number of Failed sessions is now equal to Number of No-Read sessions
+
         output.append(f"Number of Failed sessions: {total_noread}")
-        output.append(f"Number of No-Code sessions: {analysis_data['no_code_count']}")
-        output.append(f"Number of Read-Failure sessions: {analysis_data['read_failure_count']}")
-        
-        # Calculate total unreadable using same formula as Analysis tab
-        ocr_readable_count = analysis_data.get('ocr_readable_count', 0)
+        no_code = analysis_data['no_code_count']
+        read_failure = analysis_data['read_failure_count']
         # Use consistent formula: total_sessions - sessions_no_code - sessions_read_failure
-        total_unreadable = len(self.calculate_session_labels()) - analysis_data['no_code_count'] - analysis_data['read_failure_count']
+        total_unreadable = len(self.calculate_session_labels()) - no_code - read_failure
         if total_unreadable < 0:
             total_unreadable = 0
-            
+        output.append(f"Number of No-Code sessions: {no_code}")
+        output.append(f"Number of Read-Failure sessions: {read_failure}")
         output.append(f"Number of Unreadable sessions: {total_unreadable}")
+        ocr_readable_count = analysis_data.get('ocr_readable_count', 0)
         output.append(f"Number of OCR recovered sessions: {ocr_readable_count}")
+
+        # Integrity check: No-Code + Read-Failure + Unreadable == Failed sessions
+        integrity_sum = no_code + read_failure + total_unreadable
+        integrity_ok = (integrity_sum == total_noread)
+        output.append(f"Integrity check: {no_code} + {read_failure} + {total_unreadable} = {integrity_sum}" + (" (OK)" if integrity_ok else f" (❌ MISMATCH: should be {total_noread})"))
         
         output.append("")  # Empty line
         
@@ -3541,7 +3547,21 @@ class ImageLabelTool:
         unclassified_images = total_images - classified_images
         
         # Multi-line format for better readability
+
+        # Integrity check: No_label + read_failure + incomplete + unreadable == classified_images
+        no_label = sum(1 for path in self.all_image_paths if path in self.labels and self.labels[path] == "no label")
+        read_failure = sum(1 for path in self.all_image_paths if path in self.labels and self.labels[path] == "read failure")
+        incomplete = sum(1 for path in self.all_image_paths if path in self.labels and self.labels[path] == "incomplete")
+        unreadable = sum(1 for path in self.all_image_paths if path in self.labels and self.labels[path] == "unreadable")
+        integrity_sum = no_label + read_failure + incomplete + unreadable
+        integrity_ok = (integrity_sum == classified_images)
+
         progress_text = f"{classified_images}/{total_images} classified\n({unclassified_images} remaining)"
+        progress_text += f"\nIntegrity check: {no_label} + {read_failure} + {incomplete} + {unreadable} = {integrity_sum}"
+        if integrity_ok:
+            progress_text += " (OK)"
+        else:
+            progress_text += f" (❌ MISMATCH: should be {classified_images})"
         self.progress_var.set(progress_text)
         
         # Change text color based on remaining count (but keep consistent font size)
@@ -3742,6 +3762,10 @@ class ImageLabelTool:
             total_readable_excl_ocr = "N/A (Enter expected total)"
             total_readable_incl_ocr = "N/A (Enter expected total)"
         
+        # Integrity check: sessions_no_code + sessions_read_failure + sessions_unreadable_code == total_sessions
+        integrity_sum = sessions_no_code + sessions_read_failure + sessions_unreadable_code
+        integrity_ok = (integrity_sum == total_sessions)
+
         # Format the display
         lines = [
             f"Number of failed sessions: {total_sessions}",
@@ -3750,9 +3774,9 @@ class ImageLabelTool:
             f"Sessions with unreadable code: {sessions_unreadable_code}",
             f"Sessions recovered with OCR: {sessions_ocr_readable}",
             f"Total readable sessions (excl. OCR): {total_readable_excl_ocr}",
-            f"Total readable sessions (incl. OCR): {total_readable_incl_ocr}"
+            f"Total readable sessions (incl. OCR): {total_readable_incl_ocr}",
+            f"Integrity check: {sessions_no_code} + {sessions_read_failure} + {sessions_unreadable_code} = {integrity_sum}" + (" (OK)" if integrity_ok else f" (❌ MISMATCH: should be {total_sessions})")
         ]
-        
         self.session_count_var.set("\n".join(lines))
 
     def update_total_stats(self):
