@@ -705,6 +705,10 @@ class ImageLabelTool:
         self.root.bind('<Shift-H>', self.histogram_eq_shortcut)
         self.root.bind('<Shift-h>', self.histogram_eq_shortcut)
         
+        # Session diagnostic shortcut
+        self.root.bind('<Control-d>', self.session_diagnostic_shortcut)
+        self.root.bind('<Control-D>', self.session_diagnostic_shortcut)
+        
         # Set focus to root window to capture keyboard events
         self.root.focus_set()
         
@@ -1376,6 +1380,52 @@ class ImageLabelTool:
             self.histogram_eq_enabled.set(not current_value)
             # Trigger the callback to refresh the image
             self.on_histogram_eq_changed()
+
+    def session_diagnostic_shortcut(self, event=None):
+        """Keyboard shortcut: Ctrl+D for session diagnostic dialog"""
+        if self.should_ignore_keyboard_shortcuts():
+            return
+        
+        # Create a simple dialog to input session ID
+        from tkinter import simpledialog
+        session_id = simpledialog.askstring("Session Diagnostic", 
+                                           "Enter session ID to diagnose:")
+        
+        if session_id:
+            # Generate diagnostic report
+            report = self.diagnose_session_classification(session_id)
+            
+            # Show report in a new window
+            import tkinter as tk
+            diagnostic_window = tk.Toplevel(self.root)
+            diagnostic_window.title(f"Session {session_id} Diagnostic")
+            diagnostic_window.geometry("800x600")
+            
+            # Add text widget with scrollbar
+            frame = tk.Frame(diagnostic_window)
+            frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            text_widget = tk.Text(frame, wrap=tk.WORD, font=("Consolas", 10))
+            scrollbar = tk.Scrollbar(frame, orient=tk.VERTICAL, command=text_widget.yview)
+            text_widget.configure(yscrollcommand=scrollbar.set)
+            
+            text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            text_widget.insert("1.0", report)
+            text_widget.config(state=tk.DISABLED)
+            
+            # Add copy button
+            button_frame = tk.Frame(diagnostic_window)
+            button_frame.pack(fill=tk.X, padx=10, pady=5)
+            
+            def copy_to_clipboard():
+                diagnostic_window.clipboard_clear()
+                diagnostic_window.clipboard_append(report)
+                
+            copy_button = tk.Button(button_frame, text="Copy to Clipboard", 
+                                  command=copy_to_clipboard)
+            copy_button.pack(side=tk.RIGHT)
 
     def on_total_changed(self, event=None):
         """Called when the total sessions field changes"""
@@ -3601,22 +3651,9 @@ class ImageLabelTool:
                 # Skip sessions with no classified images
                 continue
             
-            # Apply session labeling rules in priority order:
-            # 1. If any image has "read failure", session is "read failure" (technical issue)
-            if "read failure" in classified_labels:
-                session_labels_dict[session_id] = "read failure"
-            # 2. If any image has "unreadable" issues, session has "unreadable" issues
-            elif "unreadable" in classified_labels:
-                session_labels_dict[session_id] = "unreadable"
-            # 3. If any image is "incomplete", session is "incomplete"
-            elif "incomplete" in classified_labels:
-                session_labels_dict[session_id] = "incomplete"
-            # 4. If ALL classified images are "no label", session is "no label"
-            elif all(label == "no label" for label in classified_labels):
-                session_labels_dict[session_id] = "no label"
-            # 5. Default: if mix of categories, session is "incomplete"
-            else:
-                session_labels_dict[session_id] = "incomplete"
+            # Use centralized session classification logic
+            session_classification = self.determine_session_classification(classified_labels)
+            session_labels_dict[session_id] = session_classification
                 
         return session_labels_dict
 
@@ -4569,6 +4606,9 @@ class ImageLabelTool:
         self.btn_gen_sessions_csv.config(state='disabled', text="Generating...")
         self.auto_detect_progress_var.set("Extracting session IDs by category...")
         
+        # Diagnostic tracking for session 142
+        session_142_diagnostics = []
+        
         # Collect session IDs from all images, grouped by classification
         for i, image_path in enumerate(self.all_image_paths):
             filename = os.path.basename(image_path)
@@ -4585,6 +4625,15 @@ class ImageLabelTool:
                 # Get the classification for this image
                 classification = self.labels.get(image_path, 'unlabeled')
                 
+                # Diagnostic logging for session 142
+                if session_id == '142':
+                    session_142_diagnostics.append({
+                        'filename': filename,
+                        'full_path': image_path,
+                        'classification': classification,
+                        'in_labels_dict': image_path in self.labels
+                    })
+                
                 # Add session ID to appropriate category
                 if classification in sessions_by_category:
                     sessions_by_category[classification].add(session_id)
@@ -4592,6 +4641,46 @@ class ImageLabelTool:
                     sessions_by_category['unlabeled'].add(session_id)
         
         try:
+            # FIXED: Apply session classification hierarchy properly
+            # First, collect all session data
+            session_data = {}  # session_id -> {classifications: set(), images: list()}
+            
+            for session_id in set().union(*sessions_by_category.values()):
+                session_data[session_id] = {
+                    'classifications': set(),
+                    'images': []
+                }
+            
+            # Collect detailed data for each session
+            for image_path in self.all_image_paths:
+                filename = os.path.basename(image_path)
+                session_id = self.extract_session_id_from_filename(filename)
+                if session_id:
+                    classification = self.labels.get(image_path, 'unlabeled')
+                    if session_id not in session_data:
+                        session_data[session_id] = {'classifications': set(), 'images': []}
+                    session_data[session_id]['classifications'].add(classification)
+                    session_data[session_id]['images'].append({
+                        'filename': filename,
+                        'classification': classification
+                    })
+            
+            # Apply hierarchy to determine final session classification
+            final_sessions_by_category = {
+                'no label': set(),
+                'read failure': set(),
+                'incomplete': set(),
+                'unreadable': set(),
+                'unlabeled': set()
+            }
+            
+            for session_id, data in session_data.items():
+                classifications = data['classifications']
+                
+                # Use centralized session classification logic
+                final_classification = self.determine_session_classification(classifications)
+                final_sessions_by_category[final_classification].add(session_id)
+            
             # Create timestamp for consistent file naming
             from datetime import datetime
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -4600,7 +4689,7 @@ class ImageLabelTool:
             total_sessions = 0
             
             # Generate CSV file for each category that has sessions
-            for category, session_ids in sessions_by_category.items():
+            for category, session_ids in final_sessions_by_category.items():
                 if session_ids:  # Only create CSV if there are sessions in this category
                     # Sort session IDs for consistent output
                     sorted_session_ids = sorted(session_ids)
@@ -4610,12 +4699,13 @@ class ImageLabelTool:
                     csv_filename = f"sessions_{safe_category}_{timestamp}.csv"
                     csv_path = os.path.join(self.folder_path, csv_filename)
                     
-                    # Write CSV
+                    # Write CSV with detailed information
                     with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
                         writer = csv.writer(csvfile)
-                        writer.writerow(['session_id', 'category'])  # Header with category info
+                        writer.writerow(['session_id', 'final_category', 'all_classifications_in_session'])
                         for session_id in sorted_session_ids:
-                            writer.writerow([session_id, category])
+                            all_classifications = ', '.join(sorted(session_data[session_id]['classifications']))
+                            writer.writerow([session_id, category, all_classifications])
                     
                     created_files.append((csv_filename, len(sorted_session_ids), category))
                     total_sessions += len(sorted_session_ids)
@@ -4632,13 +4722,88 @@ class ImageLabelTool:
             
             created_files.append((summary_filename, len(created_files), 'summary'))
             
+            # Generate diagnostic report for session 142 if found
+            diagnostic_info = ""
+            if session_142_diagnostics:
+                diagnostic_filename = f"session_142_diagnostic_{timestamp}.txt"
+                diagnostic_path = os.path.join(self.folder_path, diagnostic_filename)
+                
+                with open(diagnostic_path, 'w', encoding='utf-8') as diag_file:
+                    diag_file.write("=== SESSION 142 DIAGNOSTIC REPORT ===\n\n")
+                    diag_file.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    diag_file.write(f"Total images found for session 142: {len(session_142_diagnostics)}\n\n")
+                    
+                    # Group by classification
+                    classifications = {}
+                    for item in session_142_diagnostics:
+                        classification = item['classification']
+                        if classification not in classifications:
+                            classifications[classification] = []
+                        classifications[classification].append(item)
+                    
+                    diag_file.write("CLASSIFICATION BREAKDOWN:\n")
+                    for classification, items in classifications.items():
+                        diag_file.write(f"\n{classification.upper()}: {len(items)} images\n")
+                        for item in items:
+                            diag_file.write(f"  - {item['filename']}\n")
+                            diag_file.write(f"    Path: {item['full_path']}\n")
+                            diag_file.write(f"    In labels dict: {item['in_labels_dict']}\n")
+                    
+                    # Check session logic
+                    diag_file.write(f"\nSESSION CLASSIFICATION LOGIC (HIERARCHY):\n")
+                    diag_file.write("The session gets classified by the 'worst case' rule:\n")
+                    diag_file.write("1. If ANY image is 'unreadable' -> ENTIRE session is 'unreadable'\n")
+                    diag_file.write("2. Else if ANY image is 'read failure' -> ENTIRE session is 'read failure'\n")
+                    diag_file.write("3. Else if ANY image is 'incomplete' -> ENTIRE session is 'incomplete'\n")
+                    diag_file.write("4. Else if ANY image is 'no label' -> ENTIRE session is 'no label'\n")
+                    diag_file.write("5. Otherwise -> ENTIRE session is 'unlabeled'\n\n")
+                    
+                    # Use centralized session classification logic
+                    all_classifications = [item['classification'] for item in session_142_diagnostics]
+                    expected_session_class = self.determine_session_classification(all_classifications)
+                    
+                    # Determine reason based on classifications present
+                    classifications_set = set(all_classifications)
+                    has_unreadable = 'unreadable' in classifications_set
+                    has_read_failure = 'read failure' in classifications_set
+                    has_incomplete = 'incomplete' in classifications_set
+                    has_no_label = 'no label' in classifications_set
+                    
+                    if expected_session_class == 'unreadable':
+                        reason = "contains at least one 'unreadable' image (highest priority)"
+                    elif expected_session_class == 'read failure':
+                        reason = "contains at least one 'read failure' image (and no 'unreadable')"
+                    elif expected_session_class == 'incomplete':
+                        reason = "contains at least one 'incomplete' image (and no worse classifications)"
+                    elif expected_session_class == 'no label':
+                        reason = "contains at least one 'no label' image (and no worse classifications)"
+                    else:
+                        reason = "no classified images found"
+                    
+                    diag_file.write(f"ANALYSIS FOR SESSION 142:\n")
+                    diag_file.write(f"- Has unreadable: {has_unreadable}\n")
+                    diag_file.write(f"- Has read failure: {has_read_failure}\n")
+                    diag_file.write(f"- Has incomplete: {has_incomplete}\n")
+                    diag_file.write(f"- Has no label: {has_no_label}\n\n")
+                    
+                    diag_file.write(f"EXPECTED SESSION 142 CLASSIFICATION: {expected_session_class.upper()}\n")
+                    diag_file.write(f"REASON: {reason}\n\n")
+                    
+                    # Which CSV file should contain session 142
+                    safe_category = expected_session_class.replace(' ', '_').replace('/', '_')
+                    expected_csv = f"sessions_{safe_category}_{timestamp}.csv"
+                    diag_file.write(f"SESSION 142 SHOULD APPEAR ONLY IN: {expected_csv}\n")
+                    diag_file.write(f"If it appears in multiple CSV files, that indicates a bug in the logic!\n")
+                
+                diagnostic_info = f"\n\nDIAGNOSTIC: Created {diagnostic_filename} with session 142 analysis"
+            
             # Completion
             files_list = '\n'.join([f"• {filename} ({count} sessions)" for filename, count, _ in created_files])
             self.auto_detect_progress_var.set(f"Generated {len(created_files)} CSV files")
             self.btn_gen_sessions_csv.config(state='normal', text="Gen Sessions CSV")
             
             messagebox.showinfo("CSV Files Generated", 
-                              f"Successfully generated {len(created_files)} CSV files:\n\n{files_list}\n\nTotal unique sessions processed: {total_sessions}")
+                              f"Successfully generated {len(created_files)} CSV files:\n\n{files_list}\n\nTotal unique sessions processed: {total_sessions}{diagnostic_info}")
             
         except Exception as e:
             self.btn_gen_sessions_csv.config(state='normal', text="Gen Sessions CSV")
@@ -4674,6 +4839,92 @@ class ImageLabelTool:
             return parts[0]
         
         return None
+
+    def determine_session_classification(self, image_classifications):
+        """
+        CENTRALIZED SESSION CLASSIFICATION LOGIC
+        
+        Determines the final session classification based on image classifications within the session.
+        Uses hierarchical "worst case" logic where the most severe classification wins.
+        
+        Args:
+            image_classifications: set or list of classification strings for images in the session
+            
+        Returns:
+            str: The final session classification
+            
+        Hierarchy (worst to best):
+        1. 'unreadable' (highest priority - if ANY image is unreadable, session is unreadable)
+        2. 'read failure' (if ANY image is read failure and no unreadable, session is read failure)
+        3. 'incomplete' (if ANY image is incomplete and no worse classifications)
+        4. 'no label' (if ANY image is no label and no worse classifications)  
+        5. 'unlabeled' (default - no images have been classified)
+        """
+        if not image_classifications:
+            return 'unlabeled'
+        
+        # Convert to set for efficient lookup
+        classifications_set = set(image_classifications)
+        
+        # Apply hierarchy - worst case wins
+        if 'unreadable' in classifications_set:
+            return 'unreadable'
+        elif 'read failure' in classifications_set:
+            return 'read failure'
+        elif 'incomplete' in classifications_set:
+            return 'incomplete'
+        elif 'no label' in classifications_set:
+            return 'no label'
+        else:
+            return 'unlabeled'
+
+    def diagnose_session_classification(self, target_session_id):
+        """Diagnostic method to analyze classification for a specific session"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            return "No images loaded"
+        
+        session_images = []
+        
+        # Find all images for the target session
+        for image_path in self.all_image_paths:
+            filename = os.path.basename(image_path)
+            session_id = self.extract_session_id_from_filename(filename)
+            
+            if session_id == str(target_session_id):
+                classification = self.labels.get(image_path, 'unlabeled')
+                session_images.append({
+                    'filename': filename,
+                    'path': image_path,
+                    'classification': classification,
+                    'in_labels': image_path in self.labels
+                })
+        
+        if not session_images:
+            return f"No images found for session {target_session_id}"
+        
+        # Analyze classifications
+        classifications = {}
+        for img in session_images:
+            classification = img['classification']
+            if classification not in classifications:
+                classifications[classification] = []
+            classifications[classification].append(img)
+        
+        # Use centralized session classification logic
+        all_classifications = [img['classification'] for img in session_images]
+        expected_session_class = self.determine_session_classification(all_classifications)
+        
+        # Build diagnostic report
+        report = f"=== SESSION {target_session_id} ANALYSIS ===\n"
+        report += f"Total images: {len(session_images)}\n"
+        report += f"Expected session classification: {expected_session_class}\n\n"
+        
+        for classification, images in classifications.items():
+            report += f"{classification.upper()}: {len(images)} images\n"
+            for img in images:
+                report += f"  - {img['filename']} (in labels: {img['in_labels']})\n"
+        
+        return report
 
     def start_auto_timer(self):
         """Start the auto-timer for periodic auto detection"""
