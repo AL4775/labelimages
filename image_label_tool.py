@@ -13,6 +13,12 @@ import numpy as np
 import logging
 import multiprocessing
 
+# Application version
+VERSION = "2.1.2"
+
+# Classification labels
+LABELS = ["(Unclassified)", "no label", "read failure", "incomplete", "unreadable"]
+
 # Optional imports for charting functionality
 HAS_MATPLOTLIB = False
 try:
@@ -27,32 +33,94 @@ except ImportError:
     FigureCanvasTkAgg = None
     sns = None
 
-# Application version
-VERSION = "2.1.2"
-
+# Optional imports for charting functionality
+HAS_MATPLOTLIB = False
 LABELS = ["(Unclassified)", "no label", "read failure", "incomplete", "unreadable"]
 
 class ImageLabelTool:
+    def generate_unread_session_folder(self):
+        """Export all images from unreadable sessions into a timestamped folder."""
+        import shutil
+        from datetime import datetime
+        import os
+        from tkinter import messagebox
+
+        # Find all sessions (by session ID) that have at least one unreadable image
+        # Then, for those sessions, collect all images labeled as unreadable, read failure, or incomplete
+        def get_session_id(path):
+            # Use the same logic as get_session_number if available, else fallback to filename prefix
+            try:
+                filename = os.path.basename(path)
+                parts = filename.split('_')
+                if len(parts) >= 2:
+                    return parts[0]  # Use first part as session/trigger ID
+                else:
+                    return filename
+            except Exception:
+                return path
+
+
+        # Step 1: Build a mapping from session_id to all image labels in that session (including unlabeled images)
+        session_labels = {}
+        for path in self.all_image_paths:
+            session_id = get_session_id(path)
+            label = self.labels.get(path, "(Unclassified)")
+            session_labels.setdefault(session_id, []).append(label)
+
+        # Step 2: Find all session IDs that are NOT 'no label' sessions (i.e., not all images are labeled as 'no label')
+        valid_sessions = set()
+        for session_id, labels in session_labels.items():
+            # Exclude sessions where all images are labeled as 'no label'
+            if not labels:
+                continue
+            if not all(lab == "no label" for lab in labels):
+                valid_sessions.add(session_id)
+
+        if not valid_sessions:
+            messagebox.showinfo("No Valid Sessions", "There are no sessions with images labeled other than 'no label'.")
+            return
+
+        # Step 3: Collect all images in those sessions with label unreadable, read failure, or incomplete
+        export_labels = {"unreadable", "read failure", "incomplete"}
+        images_to_export = []
+        for path in self.all_image_paths:
+            session_id = get_session_id(path)
+            label = self.labels.get(path, "(Unclassified)")
+            if session_id in valid_sessions and label in export_labels:
+                images_to_export.append(path)
+
+        if not images_to_export:
+            messagebox.showinfo("No Images to Export", "No images with the required labels found in valid sessions.")
+            return
+
+        # Create export folder with timestamp under the selected folder
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if self.folder_path:
+            export_folder = os.path.join(self.folder_path, f"unreadable_sessions_{timestamp}")
+        else:
+            export_folder = os.path.join(os.getcwd(), f"unreadable_sessions_{timestamp}")
+        os.makedirs(export_folder, exist_ok=True)
+
+        # Copy images
+        copied = 0
+        for img_path in images_to_export:
+            if os.path.isfile(img_path):
+                try:
+                    shutil.copy2(img_path, export_folder)
+                    copied += 1
+                except Exception as e:
+                    print(f"Failed to copy {img_path}: {e}")
+
+        messagebox.showinfo(
+            "Export Complete",
+            f"Copied {copied} image(s) (unreadable/read failure/incomplete) from unreadable sessions to:\n{export_folder}"
+        )
     def __init__(self, root):
         self.root = root
         self.root.title(f"Aurora FIS Analytics INTERNAL tool v{VERSION}")
-        
-        # Set application icon
-        try:
-            icon_path = os.path.join(os.path.dirname(__file__), "analytics_icon.ico")
-            if os.path.exists(icon_path):
-                self.root.iconbitmap(icon_path)
-            else:
-                # Fallback to PNG icon if ICO doesn't exist
-                png_icon_path = os.path.join(os.path.dirname(__file__), "analytics_icon_32x32.png")
-                if os.path.exists(png_icon_path):
-                    from PIL import Image, ImageTk
-                    icon_img = Image.open(png_icon_path)
-                    icon_photo = ImageTk.PhotoImage(icon_img)
-                    self.root.iconphoto(True, icon_photo)
-        except Exception as e:
+        # ...rest of your __init__ code...
             # If icon loading fails, continue without icon
-            print(f"Note: Could not load application icon: {e}")
+            # print(f"Note: Could not load application icon: {e}")
         
         self.root.configure(bg="#FAFAFA")  # Very light gray background
         self.root.minsize(800, 500)  # Ultra-compact minimum window size
@@ -248,6 +316,13 @@ class ImageLabelTool:
                                              bg="#9C27B0", fg="white", font=("Arial", 10, "bold"),
                                              padx=8, pady=3, relief="flat")
         self.btn_gen_filter_folder.pack(side=tk.LEFT, padx=(0, 5))
+
+        # Export button for unreadable sessions
+        self.btn_gen_unread_session = tk.Button(toolbar_frame, text="Gen Unread Session", 
+                                               command=self.generate_unread_session_folder,
+                                               bg="#607D8B", fg="white", font=("Arial", 10, "bold"),
+                                               padx=8, pady=3, relief="flat")
+        self.btn_gen_unread_session.pack(side=tk.LEFT, padx=(0, 5))
 
         # Export button for session IDs CSV
         self.btn_gen_sessions_csv = tk.Button(toolbar_frame, text="Gen Sessions CSV", 
