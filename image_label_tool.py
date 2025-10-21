@@ -129,6 +129,7 @@ class ImageLabelTool:
         self.current_index = 0
         self.labels = {}
         self.ocr_readable = {}  # Track OCR readable status per image
+        self.false_noread = {}  # Track False NoRead status per image
         self.comments = {}  # Track comments for each image
         self.folder_path = None
         self.csv_filename = None
@@ -249,7 +250,8 @@ class ImageLabelTool:
             "read failure only",
             "incomplete only",
             "unreadable only",
-            "OCR recovered only"
+            "OCR recovered only",
+            "False NoRead only"
         ]
         self.filter_menu = tk.OptionMenu(filter_frame, self.filter_var, *filter_options, command=self.on_filter_changed)
         self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
@@ -461,9 +463,9 @@ class ImageLabelTool:
             rb.grid(row=0, column=i, padx=1, pady=1, sticky="ew")  # Single row layout
             self.radio_buttons.append(rb)
         
-        # OCR Readable checkbox (separate from radio buttons)
+        # OCR Readable and False NoRead checkboxes (side by side)
         ocr_frame = tk.Frame(label_frame, bg="#FAFAFA")
-        ocr_frame.pack(pady=(8, 0))  # Add some space above the checkbox
+        ocr_frame.pack(pady=(8, 0))  # Add some space above the checkboxes
         
         self.ocr_readable_var = tk.BooleanVar()
         self.ocr_checkbox = tk.Checkbutton(ocr_frame, text="OCR Readable (T)", 
@@ -471,7 +473,16 @@ class ImageLabelTool:
                                          command=self.on_ocr_checkbox_changed,
                                          bg="#E8F5E8", font=("Arial", 11, "bold"),
                                          selectcolor="white", padx=5, pady=2)
-        self.ocr_checkbox.pack()
+        self.ocr_checkbox.pack(side=tk.LEFT, padx=(0, 5))  # Left side with right margin
+        
+        # False NoRead checkbox
+        self.false_noread_var = tk.BooleanVar()
+        self.false_noread_checkbox = tk.Checkbutton(ocr_frame, text="False NoRead (F)", 
+                                                  variable=self.false_noread_var,
+                                                  command=self.on_false_noread_checkbox_changed,
+                                                  bg="#FFE8E8", font=("Arial", 11, "bold"),
+                                                  selectcolor="white", padx=5, pady=2)
+        self.false_noread_checkbox.pack(side=tk.LEFT, padx=(5, 0))  # Right side with left margin
         
         # Navigation buttons (right side) - stacked vertically for width efficiency
         nav_buttons_frame = tk.Frame(nav_label_container, bg="#FAFAFA")
@@ -758,6 +769,8 @@ class ImageLabelTool:
         self.root.bind('<KeyPress-E>', self.label_shortcut_e)
         self.root.bind('<KeyPress-r>', self.label_shortcut_r)
         self.root.bind('<KeyPress-R>', self.label_shortcut_r)
+        self.root.bind('<KeyPress-f>', self.label_shortcut_f)
+        self.root.bind('<KeyPress-F>', self.label_shortcut_f)
         
         # Bind O/P keys for navigation (avoiding arrow key conflicts with radio buttons)
         self.root.bind('<KeyPress-o>', self.prev_image_shortcut)
@@ -899,6 +912,7 @@ class ImageLabelTool:
         self.all_image_paths.sort(key=self.get_image_sort_key)
         self.current_index = 0
         self.labels = {}  # Reset labels for new folder
+        self.false_noread = {}  # Reset false_noread for new folder
         self.comments = {}  # Reset comments for new folder
         
         # Initialize previously seen files with current files
@@ -979,6 +993,20 @@ class ImageLabelTool:
             self.status_var.set("No images loaded.")
             self.scale_info_var.set("")
             return
+            
+        # Blink effect: Clear display briefly before showing new image
+        self.canvas.delete("all")
+        self.canvas.configure(bg="#F0F0F0")  # Brief light gray flash
+        self.root.update_idletasks()  # Force UI update without blocking
+        
+        # Schedule the actual image display after blink delay
+        self.root.after(5, self._display_image_after_blink)
+    
+    def _display_image_after_blink(self):
+        """Display the actual image after blink effect"""
+        if not self.image_paths:
+            return
+            
         path = self.image_paths[self.current_index]
         img = Image.open(path)
         original_width, original_height = img.size
@@ -987,7 +1015,8 @@ class ImageLabelTool:
         if hasattr(self, 'histogram_eq_enabled') and self.histogram_eq_enabled.get():
             img = self.apply_histogram_equalization(img)
         
-        # Clear previous image
+        # Restore canvas background and clear any previous content
+        self.canvas.configure(bg="black")  # Restore normal background
         self.canvas.delete("all")
         
         # Get canvas dimensions (reduced for ultra-compact layout)
@@ -1064,6 +1093,127 @@ class ImageLabelTool:
         # Update OCR readable checkbox status
         ocr_status = self.ocr_readable.get(path, False)
         self.ocr_readable_var.set(ocr_status)
+        
+        # Update False NoRead checkbox status
+        false_noread_status = self.false_noread.get(path, False)
+        self.false_noread_var.set(false_noread_status)
+        
+        # Update False NoRead checkbox enabled/disabled state
+        self.update_false_noread_checkbox_state()
+        
+        # Update comment field with current image's comment
+        if hasattr(self, 'comment_text'):
+            comment_text = self.comments.get(path, "")
+            # Temporarily disable event bindings to prevent triggering on_comment_change during programmatic updates
+            self.comment_text.unbind('<KeyRelease>')
+            self.comment_text.unbind('<FocusOut>')
+            
+            # Clear and set the Text widget content
+            self.comment_text.delete("1.0", tk.END)
+            self.comment_text.insert("1.0", comment_text)
+            
+            # Re-bind the events after programmatic update is complete
+            self.comment_text.bind('<KeyRelease>', self.on_comment_change)
+            self.comment_text.bind('<FocusOut>', self.on_comment_change)
+            
+            # Update comment field state based on classification and filter status
+            self.update_comment_field_state()
+        
+        # Update current image filename in comment section
+        if hasattr(self, 'current_image_filename_var'):
+            filename = os.path.basename(path)
+            self.current_image_filename_var.set(f"📄 {filename}")
+        
+        self.status_var.set(f"{os.path.basename(path)} ({self.current_index+1}/{len(self.image_paths)}) - {original_width}x{original_height}px")
+        
+        # Update progress and label status
+        self.update_progress_display()
+        self.update_current_label_status()
+        
+        # Update navigation buttons
+        self.update_navigation_buttons()
+        
+        # Get canvas dimensions (reduced for ultra-compact layout)
+        canvas_width = max(350, self.canvas.winfo_width())  # Reduced from 400
+        canvas_height = max(250, self.canvas.winfo_height())  # Reduced from 300
+        if canvas_width <= 1 or canvas_height <= 1:
+            canvas_width, canvas_height = 350, 350  # Smaller default size
+        
+        if self.scale_1to1:
+            # Show image at 1:1 scale with current zoom level
+            scale_factor = self.zoom_level
+            new_width = int(original_width * scale_factor)
+            new_height = int(original_height * scale_factor)
+            
+            if scale_factor != 1.0:
+                display_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            else:
+                display_img = img
+            
+            self.current_scale_factor = scale_factor
+            scale_text = f"Scale: {scale_factor:.2f}\n({scale_factor*100:.1f}%)"
+            
+            # Set scroll region to image size
+            self.canvas.configure(scrollregion=(0, 0, new_width, new_height))
+            
+            if new_width > canvas_width or new_height > canvas_height:
+                scale_text += "\nUse mouse to pan"
+                # Show scrollbars
+                self.h_scrollbar.grid(row=1, column=0, sticky="ew")
+                self.v_scrollbar.grid(row=0, column=1, sticky="ns")
+            else:
+                # Hide scrollbars if not needed
+                self.h_scrollbar.grid_remove()
+                self.v_scrollbar.grid_remove()
+        else:
+            # Calculate scale factor needed to fit image (fitted mode)
+            scale_x = canvas_width / original_width
+            scale_y = canvas_height / original_height
+            scale_factor = min(scale_x, scale_y)
+            self.current_scale_factor = scale_factor
+            self.zoom_level = scale_factor  # Sync zoom level with fitted scale
+            
+            # Resize image to fit available space while maintaining aspect ratio
+            display_img = img.copy()
+            display_img.thumbnail((canvas_width, canvas_height), Image.Resampling.LANCZOS)
+            
+            scale_text = f"Scale: {scale_factor:.2f}\n({scale_factor*100:.1f}%)\nFitted to window"
+            
+            # Reset scroll region for fitted mode and center the image
+            img_width, img_height = display_img.size
+            self.canvas.configure(scrollregion=(0, 0, canvas_width, canvas_height))
+            # Hide scrollbars in fitted mode
+            self.h_scrollbar.grid_remove()
+            self.v_scrollbar.grid_remove()
+        
+        self.tk_img = ImageTk.PhotoImage(display_img)
+        
+        # Center the image in the canvas
+        img_width, img_height = display_img.size
+        if self.scale_1to1:
+            # For 1:1 mode, place image at origin for proper scrolling
+            self.canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
+        else:
+            # For fitted mode, center the image
+            center_x = canvas_width // 2
+            center_y = canvas_height // 2
+            self.canvas.create_image(center_x, center_y, anchor="center", image=self.tk_img)
+        
+        self.scale_info_var.set(scale_text)
+        
+        label = self.labels.get(path, LABELS[0])
+        self.label_var.set(label)
+        
+        # Update OCR readable checkbox status
+        ocr_status = self.ocr_readable.get(path, False)
+        self.ocr_readable_var.set(ocr_status)
+        
+        # Update False NoRead checkbox status
+        false_noread_status = self.false_noread.get(path, False)
+        self.false_noread_var.set(false_noread_status)
+        
+        # Update False NoRead checkbox enabled/disabled state
+        self.update_false_noread_checkbox_state()
         
         # Update comment field with current image's comment
         if hasattr(self, 'comment_text'):
@@ -1233,6 +1383,9 @@ class ImageLabelTool:
         self.update_progress_display()
         self.update_current_label_status()
         
+        # Update False NoRead checkbox state based on new classification
+        self.update_false_noread_checkbox_state()
+        
         # Update comment field state based on new classification status
         self.update_comment_field_state()
         
@@ -1278,10 +1431,15 @@ class ImageLabelTool:
                 self.show_image()
 
     def on_ocr_checkbox_changed(self):
-        """Handle OCR readable checkbox changes"""
+        """Handle OCR readable checkbox changes - mutually exclusive with False NoRead"""
         if not self.image_paths:
             return
         path = self.image_paths[self.current_index]
+        
+        # If OCR is being checked, uncheck False NoRead (mutual exclusivity)
+        if self.ocr_readable_var.get():
+            self.false_noread_var.set(False)
+            self.false_noread[path] = False
         
         self.ocr_readable[path] = self.ocr_readable_var.get()
         self.save_csv()
@@ -1290,6 +1448,46 @@ class ImageLabelTool:
         self.update_total_stats()
         self.update_progress_display()
         self.update_current_label_status()
+
+    def on_false_noread_checkbox_changed(self):
+        """Handle False NoRead checkbox changes - mutually exclusive with OCR"""
+        if not self.image_paths:
+            return
+        path = self.image_paths[self.current_index]
+        
+        # If False NoRead is being checked, uncheck OCR (mutual exclusivity)
+        if self.false_noread_var.get():
+            self.ocr_readable_var.set(False)
+            self.ocr_readable[path] = False
+        
+        self.false_noread[path] = self.false_noread_var.get()
+        self.save_csv()
+        self.update_counts()
+        self.update_session_stats()
+        self.update_total_stats()
+        self.update_progress_display()
+        self.update_current_label_status()
+
+    def update_false_noread_checkbox_state(self):
+        """Update False NoRead checkbox enabled/disabled state based on current image classification"""
+        if not hasattr(self, 'image_paths') or not self.image_paths or self.current_index >= len(self.image_paths):
+            return
+        
+        current_path = self.image_paths[self.current_index]
+        current_label = self.labels.get(current_path, "(Unclassified)")
+        
+        # Enable False NoRead checkbox only for "read failure" images
+        if current_label == "read failure":
+            self.false_noread_checkbox.config(state='normal')
+        else:
+            # Disable checkbox and uncheck it for non-read-failure images
+            self.false_noread_checkbox.config(state='disabled')
+            if self.false_noread_var.get():  # If it was checked, uncheck it
+                self.false_noread_var.set(False)
+                # Also update the stored value
+                self.false_noread[current_path] = False
+                # Save the change
+                self.save_csv()
 
     def on_histogram_eq_changed(self):
         """Handle histogram equalization checkbox changes"""
@@ -1369,6 +1567,17 @@ class ImageLabelTool:
             current_value = self.ocr_readable_var.get()
             self.ocr_readable_var.set(not current_value)
             self.on_ocr_checkbox_changed()
+
+    def label_shortcut_f(self, event=None):
+        """Keyboard shortcut: F for 'False NoRead' checkbox toggle"""
+        if self.should_ignore_keyboard_shortcuts_new():
+            return
+        if self.image_paths:
+            # Only allow toggle if checkbox is enabled (i.e., image is read failure)
+            if self.false_noread_checkbox['state'] == 'normal':
+                current_value = self.false_noread_var.get()
+                self.false_noread_var.set(not current_value)
+                self.on_false_noread_checkbox_changed()
 
     def label_shortcut_e(self, event=None):
         """Keyboard shortcut: E for 'incomplete'"""
@@ -2116,6 +2325,10 @@ class ImageLabelTool:
         output.append(f"Sub-Number of OCR recovered in 'read failure' sessions: {ocr_recovered_in_read_failure}")
         output.append(f"Sub-Number of OCR recovered in 'unreadable' sessions: {ocr_recovered_in_unreadable}")
         
+        # Add False NoRead sessions count from Analysis tab
+        sessions_false_noread = self.calculate_sessions_with_false_noread()
+        output.append(f"Number of False NoRead sessions: {sessions_false_noread}")
+        
 
         # Integrity check: No-Code + Read-Failure + Unreadable == Failed sessions
         integrity_sum = no_code + read_failure + total_unreadable
@@ -2135,7 +2348,7 @@ class ImageLabelTool:
         output.append(f"Net read performance (excl. OCR): {net_reading_performance['excl_ocr']:.2f}%")
         output.append(f"Net read performance (incl. OCR): {net_reading_performance['incl_ocr']:.2f}%")
         
-        # Add OCR improvement percentage
+        # Add OCR improvement percentage using centralized calculation
         if net_reading_performance['excl_ocr'] >= 0 and net_reading_performance['incl_ocr'] >= 0:
             # Get analysis data to calculate actual read numbers
             total_entered = analysis_data.get('total_entered', 0)
@@ -2143,18 +2356,16 @@ class ImageLabelTool:
             sessions_read_failure = analysis_data.get('read_failure_count', 0)
             sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
             sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
+            sessions_false_noread = self.calculate_sessions_with_false_noread()
             
-            # Calculate readable sessions and read images
-            total_readable_excl_ocr = total_entered - actual_sessions + sessions_read_failure
-            total_readable_incl_ocr = total_readable_excl_ocr + sessions_ocr_readable_non_failure
+            # Use centralized calculation for OCR improvement
+            net_rates = self.calculate_net_rates_centralized(
+                total_entered, actual_sessions, sessions_read_failure, 
+                sessions_false_noread, sessions_ocr_readable, sessions_ocr_readable_non_failure
+            )
             
-            read_images_excl_ocr = total_readable_excl_ocr - sessions_read_failure
-            read_images_incl_ocr = read_images_excl_ocr + sessions_ocr_readable
-            
-            if read_images_excl_ocr > 0:
-                # Formula: [(Read w/ OCR - Read w/o OCR) / Read w/o OCR] × 100
-                ocr_improvement = ((read_images_incl_ocr - read_images_excl_ocr) / read_images_excl_ocr) * 100
-                output.append(f"OCR read rate improvement: +{ocr_improvement:.2f}%")
+            if net_rates['successful_reads_excl_ocr'] > 0:
+                output.append(f"OCR read rate improvement: +{net_rates['ocr_improvement_percentage']:.2f}%")
             else:
                 output.append("OCR read rate improvement: N/A (no baseline reads)")
         
@@ -2398,44 +2609,25 @@ class ImageLabelTool:
         return 0.0
     
     def calculate_net_reading_performance(self, log_results, analysis_data):
-        """Calculate net reading performance percentage using the NEW formulas"""
+        """Calculate net reading performance percentage using centralized calculations"""
         # Get the data from analysis_data which matches the Analysis tab calculations
         total_entered = analysis_data.get('total_entered', 0)
         actual_sessions = analysis_data.get('actual_sessions', 0)  
         sessions_read_failure = analysis_data.get('read_failure_count', 0)
         sessions_ocr_readable = analysis_data.get('ocr_readable_count', 0)
-        
-        # Use the NEW formulas:
-        # Total readable w/o OCR = total entered - session number + read failure
-        total_readable_excl_ocr = total_entered - actual_sessions + sessions_read_failure
-        
-        # Calculate OCR readable sessions that are NOT read failure sessions
+        sessions_false_noread = self.calculate_sessions_with_false_noread()
         sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
         
-        # Total readable w/ OCR = Total readable w/o OCR + OCR readable sessions that are not read failure
-        total_readable_incl_ocr = total_readable_excl_ocr + sessions_ocr_readable_non_failure
+        # Use centralized calculation
+        net_rates = self.calculate_net_rates_centralized(
+            total_entered, actual_sessions, sessions_read_failure, 
+            sessions_false_noread, sessions_ocr_readable, sessions_ocr_readable_non_failure
+        )
         
-        results = {}
-        
-        # Net reading performance excluding OCR readable  
-        if total_readable_excl_ocr > 0:
-            successful_reads_excl_ocr = total_readable_excl_ocr - sessions_read_failure
-            results['excl_ocr'] = (successful_reads_excl_ocr / total_readable_excl_ocr) * 100
-            net_numerator_excl_ocr = successful_reads_excl_ocr
-        else:
-            results['excl_ocr'] = 0.0
-            net_numerator_excl_ocr = 0
-            
-        # Net reading performance including OCR readable - use same logic as main stats
-        if total_readable_incl_ocr > 0:
-            # sessions read using OCR = sessions that were read using OCR, regardless of other status
-            sessions_read_using_ocr = sessions_ocr_readable
-            net_numerator_incl_ocr = net_numerator_excl_ocr + sessions_read_using_ocr
-            results['incl_ocr'] = (net_numerator_incl_ocr / total_readable_incl_ocr) * 100
-        else:
-            results['incl_ocr'] = 0.0
-            
-        return results
+        return {
+            'excl_ocr': net_rates['net_rate_excl_ocr'],
+            'incl_ocr': net_rates['net_rate_incl_ocr']
+        }
     
     def export_log_analysis_report(self):
         """Export the log analysis results to a text report file"""
@@ -2541,6 +2733,10 @@ class ImageLabelTool:
             report_lines.append(f"Number of OCR recovered (non read failure) sessions: {ocr_recovered_non_failure}")
             report_lines.append(f"Sub-Number of OCR recovered in 'read failure' sessions: {ocr_recovered_in_read_failure}")
             report_lines.append(f"Sub-Number of OCR recovered in 'unreadable' sessions: {ocr_recovered_in_unreadable}")
+            
+            # Add False NoRead sessions count from Analysis tab
+            sessions_false_noread = self.calculate_sessions_with_false_noread()
+            report_lines.append(f"Number of False NoRead sessions: {sessions_false_noread}")
             
 
             report_lines.append("")
@@ -2675,6 +2871,10 @@ class ImageLabelTool:
             # Special filter for OCR recovered images
             self.image_paths = [path for path in self.all_image_paths
                                if self.ocr_readable.get(path, False)]
+        elif filter_value == "False NoRead only":
+            # Special filter for False NoRead images
+            self.image_paths = [path for path in self.all_image_paths
+                               if self.false_noread.get(path, False)]
         else:
             # Map filter names to label values
             filter_map = {
@@ -2761,10 +2961,23 @@ class ImageLabelTool:
                         except (ValueError, TypeError):
                             ocr_readable = False  # Default to False if parsing fails
                     
-                    # Read Comment if available (4th column, index 3)
-                    comment = ""
+                    # Read False NoRead status if available (4th column, index 3)
+                    false_noread = False
                     if len(row) >= 4:
-                        comment = row[3].strip()
+                        try:
+                            # Handle both boolean and string representations
+                            false_noread_value = row[3]
+                            if isinstance(false_noread_value, str):
+                                false_noread = false_noread_value.lower() in ('true', 't', '1', 'yes')
+                            else:
+                                false_noread = bool(false_noread_value)
+                        except (ValueError, TypeError):
+                            false_noread = False  # Default to False if parsing fails
+                    
+                    # Read Comment if available (5th column, index 4)
+                    comment = ""
+                    if len(row) >= 5:
+                        comment = row[4].strip()
                     
                     # Convert relative path back to absolute path if needed
                     if hasattr(self, 'folder_path') and self.folder_path:
@@ -2782,6 +2995,7 @@ class ImageLabelTool:
                     
                     self.labels[image_path] = image_label
                     self.ocr_readable[image_path] = ocr_readable
+                    self.false_noread[image_path] = false_noread
                     self.comments[image_path] = comment
                     
                     # Session index loading logic removed - no longer used
@@ -2806,7 +3020,7 @@ class ImageLabelTool:
             with open(self.csv_filename, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 # Write header
-                writer.writerow(['image_path', 'image_label', 'OCR_Readable', 'Comment', 'session_number', 'session_label', 'session_OCR_readable', 'session_index'])
+                writer.writerow(['image_path', 'image_label', 'OCR_Readable', 'False_NoRead', 'Comment', 'session_number', 'session_label', 'session_OCR_readable', 'session_index'])
                 
                 # Calculate current session labels
                 session_labels_dict = self.calculate_session_labels()
@@ -2833,8 +3047,9 @@ class ImageLabelTool:
                     session_ocr_readable = session_ocr_readable_dict.get(session_id, False) if session_id else False
                     # session_index functionality removed
                     ocr_readable = self.ocr_readable.get(path, False)
+                    false_noread = self.false_noread.get(path, False)
                     comment = self.comments.get(path, "")
-                    writer.writerow([relative_path, label, ocr_readable, comment, session_id or "", session_label, session_ocr_readable, ""])
+                    writer.writerow([relative_path, label, ocr_readable, false_noread, comment, session_id or "", session_label, session_ocr_readable, ""])
             
             # Also generate statistics CSV file
             self.save_stats_csv()
@@ -3636,6 +3851,10 @@ class ImageLabelTool:
         if hasattr(self, 'all_image_paths') and self.all_image_paths:
             ocr_readable_count = len([path for path in self.all_image_paths if self.ocr_readable.get(path, False)])
             lines.append(f"  OCR recovered: {ocr_readable_count}")
+            
+            # Add False NoRead count as separate line
+            false_noread_count = len([path for path in self.all_image_paths if self.false_noread.get(path, False)])
+            lines.append(f"  False NoRead: {false_noread_count}")
         
         self.count_var.set("\n".join(lines))
         
@@ -3789,6 +4008,59 @@ class ImageLabelTool:
         
         return ocr_readable_sessions
 
+    def calculate_sessions_with_false_noread(self):
+        """Calculate number of sessions that have at least one False NoRead image"""
+        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
+            return 0
+        
+        # Group images by session
+        sessions = {}
+        for path in self.all_image_paths:
+            session_id = self.get_session_number(path)
+            if session_id:
+                if session_id not in sessions:
+                    sessions[session_id] = []
+                sessions[session_id].append(path)
+        
+        # Count sessions with at least one False NoRead image
+        false_noread_sessions = 0
+        for session_id, session_paths in sessions.items():
+            for path in session_paths:
+                if self.false_noread.get(path, False):
+                    false_noread_sessions += 1
+                    break  # Found one False NoRead image in this session, move to next session
+        
+        return false_noread_sessions
+
+    def calculate_net_rates_centralized(self, total_entered, actual_sessions, sessions_read_failure, sessions_false_noread, sessions_ocr_readable, sessions_ocr_readable_non_failure):
+        """Centralized calculation for net read rates and related metrics"""
+        # Calculate base totals
+        total_readable_excl_ocr = total_entered - actual_sessions + sessions_read_failure
+        total_readable_incl_ocr = total_readable_excl_ocr + sessions_ocr_readable_non_failure
+        
+        # Calculate successful reads (net numerator)
+        successful_reads_excl_ocr = max(0, total_readable_excl_ocr - sessions_read_failure + sessions_false_noread)
+        successful_reads_incl_ocr = successful_reads_excl_ocr + sessions_ocr_readable
+        
+        # Calculate rates
+        net_rate_excl_ocr = (successful_reads_excl_ocr / total_readable_excl_ocr * 100) if total_readable_excl_ocr > 0 else 0.0
+        net_rate_incl_ocr = (successful_reads_incl_ocr / total_readable_incl_ocr * 100) if total_readable_incl_ocr > 0 else 0.0
+        
+        # Calculate OCR improvement
+        ocr_improvement = 0.0
+        if successful_reads_excl_ocr > 0:
+            ocr_improvement = ((successful_reads_incl_ocr - successful_reads_excl_ocr) / successful_reads_excl_ocr) * 100
+        
+        return {
+            'total_readable_excl_ocr': total_readable_excl_ocr,
+            'total_readable_incl_ocr': total_readable_incl_ocr,
+            'successful_reads_excl_ocr': successful_reads_excl_ocr,
+            'successful_reads_incl_ocr': successful_reads_incl_ocr,
+            'net_rate_excl_ocr': net_rate_excl_ocr,
+            'net_rate_incl_ocr': net_rate_incl_ocr,
+            'ocr_improvement_percentage': ocr_improvement
+        }
+
     def calculate_session_ocr_readable_status(self):
         """Calculate OCR readable status for each session (True if at least one image in session is OCR readable)"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
@@ -3853,6 +4125,9 @@ class ImageLabelTool:
         # Calculate sessions with OCR readable images (separate from primary classification)
         sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
         
+        # Calculate sessions with False NoRead images
+        sessions_false_noread = self.calculate_sessions_with_false_noread()
+        
         # Calculate sessions with unreadable code (excluding no_code and read_failure)
         sessions_unreadable_code = total_sessions - sessions_no_code - sessions_read_failure
         
@@ -3881,6 +4156,7 @@ class ImageLabelTool:
             f"Sessions with read failure: {sessions_read_failure}",
             f"Sessions with unreadable code: {sessions_unreadable_code}",
             f"Sessions recovered with OCR: {sessions_ocr_readable}",
+            f"Sessions False NoRead: {sessions_false_noread}",
             f"Total readable sessions (excl. OCR): {total_readable_excl_ocr}",
             f"Total readable sessions (incl. OCR): {total_readable_incl_ocr}",
             f"Integrity check: {sessions_no_code} + {sessions_read_failure} + {sessions_unreadable_code} = {integrity_sum}" + (" (OK)" if integrity_ok else f" (❌ MISMATCH: should be {total_sessions})")
@@ -3912,15 +4188,16 @@ class ImageLabelTool:
             elif session_label == "read failure":
                 sessions_read_failure += 1
         
-        # Calculate OCR readable sessions
+        # Calculate OCR readable sessions and False NoRead sessions
         sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
         sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
+        sessions_false_noread = self.calculate_sessions_with_false_noread()
         
-        # Calculate readable sessions using NEW formulas:
-        # Total readable w/o OCR = total entered - session number + read failure
-        total_readable_excl_ocr = total_entered - actual_sessions + sessions_read_failure
-        # Total readable w/ OCR = Total readable w/o OCR + OCR readable sessions that are not read failure
-        total_readable_incl_ocr = total_readable_excl_ocr + sessions_ocr_readable_non_failure
+        # Use centralized calculation
+        net_rates = self.calculate_net_rates_centralized(
+            total_entered, actual_sessions, sessions_read_failure, 
+            sessions_false_noread, sessions_ocr_readable, sessions_ocr_readable_non_failure
+        )
         
         lines = []
         
@@ -3930,40 +4207,22 @@ class ImageLabelTool:
             gross_read_rate = (gross_numerator / total_entered) * 100
             lines.append(f"Gross read rate: {gross_numerator}/{total_entered} ({gross_read_rate:.2f}%)")
         
-        # Net read rate: (Total number of readable sessions) minus (Sessions with read failure) out of (Total number of readable sessions)
-        
-        # Calculate net numerator excluding OCR (always calculate for use in incl OCR calculation)
-        net_numerator_excl_ocr = total_readable_excl_ocr - sessions_read_failure
-        
-        if total_readable_excl_ocr > 0:
-            # Show net read rate excluding OCR readable sessions
-            net_read_rate_excl_ocr = (net_numerator_excl_ocr / total_readable_excl_ocr) * 100
-            lines.append(f"Net read rate (excl. OCR): {net_numerator_excl_ocr}/{total_readable_excl_ocr} ({net_read_rate_excl_ocr:.2f}%)")
+        # Net read rates using centralized calculation
+        if net_rates['total_readable_excl_ocr'] > 0:
+            lines.append(f"Net read rate (excl. OCR): {net_rates['successful_reads_excl_ocr']}/{net_rates['total_readable_excl_ocr']} ({net_rates['net_rate_excl_ocr']:.2f}%)")
         else:
             lines.append("Net read rate (excl. OCR): N/A (no readable sessions)")
         
-        # Show net read rate including OCR readable sessions
-        if total_readable_incl_ocr > 0:
-            # sessions read using OCR = sessions that were read using OCR, regardless of other status
-            sessions_read_using_ocr = sessions_ocr_readable
-            net_numerator_incl_ocr = net_numerator_excl_ocr + sessions_read_using_ocr
-            net_read_rate_incl_ocr = (net_numerator_incl_ocr / total_readable_incl_ocr) * 100
-            lines.append(f"Net read rate (incl. OCR): {net_numerator_incl_ocr}/{total_readable_incl_ocr} ({net_read_rate_incl_ocr:.2f}%)")
+        if net_rates['total_readable_incl_ocr'] > 0:
+            lines.append(f"Net read rate (incl. OCR): {net_rates['successful_reads_incl_ocr']}/{net_rates['total_readable_incl_ocr']} ({net_rates['net_rate_incl_ocr']:.2f}%)")
         else:
             lines.append("Net read rate (incl. OCR): N/A (no readable sessions)")
         
-        # Calculate and show OCR improvement percentage
-        if total_readable_excl_ocr > 0 and total_readable_incl_ocr > 0:
-            # Calculate number of read images (successful reads)
-            read_images_excl_ocr = total_readable_excl_ocr - sessions_read_failure
-            read_images_incl_ocr = read_images_excl_ocr + sessions_ocr_readable
-            
-            if read_images_excl_ocr > 0:
-                # Formula: [(Read w/ OCR - Read w/o OCR) / Read w/o OCR] × 100
-                ocr_improvement_percentage = ((read_images_incl_ocr - read_images_excl_ocr) / read_images_excl_ocr) * 100
-                lines.append(f"OCR read rate improvement: +{ocr_improvement_percentage:.2f}%")
-            else:
-                lines.append("OCR read rate improvement: N/A (no baseline reads)")
+        # OCR improvement using centralized calculation
+        if net_rates['successful_reads_excl_ocr'] > 0:
+            lines.append(f"OCR read rate improvement: +{net_rates['ocr_improvement_percentage']:.2f}%")
+        else:
+            lines.append("OCR read rate improvement: N/A (no baseline reads)")
         
         
         self.session_stats_var.set("\n".join(lines))
