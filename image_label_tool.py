@@ -1833,7 +1833,8 @@ class ImageLabelTool:
             # Update selected file label
             filename = os.path.basename(file_path)
             self.selected_log_file_var.set(f"Selected: {filename}")
-            
+            # Store the full log file path for display
+            self.log_file_path = file_path
             # Analyze the log file
             self.analyze_log_file(file_path)
     
@@ -2048,11 +2049,12 @@ class ImageLabelTool:
         
         # PATH section
         output.append("=== PATH ===")
-        if hasattr(self, 'folder_path') and self.folder_path:
-            output.append(f"Folder Path: {self.folder_path}")
+        # Always show the full log file path
+        log_file_path = getattr(self, 'log_file_path', None)
+        if log_file_path:
+            output.append(f"Log File Path: {log_file_path}")
         else:
-            output.append("Folder Path: No folder selected")
-        
+            output.append("Log File Path: Not set")
         output.append("")  # Empty line
         
         # DATES section
