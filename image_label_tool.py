@@ -14,7 +14,7 @@ import logging
 import multiprocessing
 
 # Application version
-VERSION = "2.1.2"
+VERSION = "2.1.5"
 
 # Classification labels
 LABELS = ["(Unclassified)", "no label", "read failure", "incomplete", "unreadable"]
@@ -1167,16 +1167,15 @@ class ImageLabelTool:
             if trigger_id_input.isdigit():
                 normalized_trigger_id = str(int(trigger_id_input))
             else:
-                normalized_trigger_id = trigger_id_input
+                messagebox.showwarning("Jump to Trigger ID", "Please enter a Trigger ID.")
         except ValueError:
-            normalized_trigger_id = trigger_id_input
+            messagebox.showwarning("Jump to Trigger ID", "Please enter a Trigger ID.")
         
         # Search for the first image with the matching trigger ID
         for i, path in enumerate(self.image_paths):
             filename = os.path.basename(path)
             filename_without_ext = os.path.splitext(filename)[0]
             parts = filename_without_ext.split('_')
-            
             if len(parts) >= 1:
                 # Extract trigger ID (first part before underscore)
                 file_trigger_id_str = parts[0]
@@ -1188,19 +1187,19 @@ class ImageLabelTool:
                         file_trigger_id = file_trigger_id_str
                 except ValueError:
                     file_trigger_id = file_trigger_id_str
-                
                 # Check if this trigger ID matches
                 if file_trigger_id == normalized_trigger_id:
                     self.current_index = i
                     self.show_image()
                     # Clear the input field after successful jump
                     self.jump_trigger_var.set("")
-                comment_text = self.comments.get(self.image_paths[self.current_index], "")
-                self.comment_text.delete("1.0", tk.END)
-                self.comment_text.insert("1.0", comment_text)
-                # Re-bind comment change events
-                self.comment_text.bind('<KeyRelease>', self.on_comment_change)
-                self.comment_text.bind('<FocusOut>', self.on_comment_change)
+                    comment_text = self.comments.get(self.image_paths[self.current_index], "")
+                    self.comment_text.delete("1.0", tk.END)
+                    self.comment_text.insert("1.0", comment_text)
+                    # Re-bind comment change events
+                    self.comment_text.bind('<KeyRelease>', self.on_comment_change)
+                    self.comment_text.bind('<FocusOut>', self.on_comment_change)
+                    return
         import tkinter.messagebox as messagebox
         messagebox.showinfo("Jump to Trigger ID", 
                            f"No image found with Trigger ID: {normalized_trigger_id}")
@@ -2098,8 +2097,23 @@ class ImageLabelTool:
         output.append(f"Number of No-Code sessions: {no_code}")
         output.append(f"Number of Read-Failure sessions: {read_failure}")
         output.append(f"Number of Unreadable sessions: {total_unreadable}")
-        ocr_readable_count = analysis_data.get('ocr_readable_count', 0)
-        output.append(f"Number of OCR recovered sessions: {ocr_readable_count}")
+        # Calculate OCR recovery breakdowns
+        session_labels_dict = self.calculate_session_labels()
+        session_ocr_readable_dict = self.calculate_session_ocr_readable_status()
+        ocr_recovered_in_read_failure = sum(
+            1 for session_id, is_ocr in session_ocr_readable_dict.items()
+            if is_ocr and session_labels_dict.get(session_id) == "read failure"
+        )
+        ocr_recovered_in_unreadable = sum(
+            1 for session_id, is_ocr in session_ocr_readable_dict.items()
+            if is_ocr and session_labels_dict.get(session_id) == "unreadable"
+        )
+        # Correct calculation: non read failure = read failure + unreadable
+        ocr_recovered_non_failure = ocr_recovered_in_read_failure + ocr_recovered_in_unreadable
+        output.append(f"Number of OCR recovered (non read failure) sessions: {ocr_recovered_non_failure}")
+        output.append(f"Sub-Number of OCR recovered in 'read failure' sessions: {ocr_recovered_in_read_failure}")
+        output.append(f"Sub-Number of OCR recovered in 'unreadable' sessions: {ocr_recovered_in_unreadable}")
+        
 
         # Integrity check: No-Code + Read-Failure + Unreadable == Failed sessions
         integrity_sum = no_code + read_failure + total_unreadable
@@ -2508,9 +2522,26 @@ class ImageLabelTool:
                 total_unreadable = 0
                 
             report_lines.append(f"Number of Unreadable sessions: {total_unreadable}")
+
+            # OCR recovery breakdowns
+            session_labels_dict = self.calculate_session_labels()
+            session_ocr_readable_dict = self.calculate_session_ocr_readable_status()
+            ocr_recovered_in_read_failure = sum(
+                1 for session_id, is_ocr in session_ocr_readable_dict.items()
+                if is_ocr and session_labels_dict.get(session_id) == "read failure"
+            )
+            ocr_recovered_in_unreadable = sum(
+                1 for session_id, is_ocr in session_ocr_readable_dict.items()
+                if is_ocr and session_labels_dict.get(session_id) == "unreadable"
+            )
+            # Correct calculation: non read failure = read failure + unreadable
+            ocr_recovered_non_failure = ocr_recovered_in_read_failure + ocr_recovered_in_unreadable
+            report_lines.append(f"Number of OCR recovered (non read failure) sessions: {ocr_recovered_non_failure}")
+            report_lines.append(f"Sub-Number of OCR recovered in 'read failure' sessions: {ocr_recovered_in_read_failure}")
+            report_lines.append(f"Sub-Number of OCR recovered in 'unreadable' sessions: {ocr_recovered_in_unreadable}")
             
+
             report_lines.append("")
-            
             # READ RATE section
             report_lines.append("=== READ RATE ===")
             
@@ -4933,9 +4964,9 @@ class ImageLabelTool:
             str: The final session classification
             
         Hierarchy (worst to best):
-        1. 'unreadable' (highest priority - if ANY image is unreadable, session is unreadable)
-        2. 'read failure' (if ANY image is read failure and no unreadable, session is read failure)
-        3. 'incomplete' (if ANY image is incomplete and no worse classifications)
+        1. 'read failure' (highest priority - if ANY image is read failure, session is read failure)
+        1. 'unreadable' (if ANY image is unreadable, session is unreadable)
+        3. 'incomplete' (if ANY image is incomplete, session is unreadable)
         4. 'no label' (if ANY image is no label and no worse classifications)  
         5. 'unlabeled' (default - no images have been classified)
         """
@@ -4944,18 +4975,19 @@ class ImageLabelTool:
         
         # Convert to set for efficient lookup
         classifications_set = set(image_classifications)
-        
+
         # Apply hierarchy - worst case wins
-        if 'unreadable' in classifications_set:
-            return 'unreadable'
-        elif 'read failure' in classifications_set:
+        if 'read failure' in classifications_set:
             return 'read failure'
+        elif 'unreadable' in classifications_set:
+            return 'unreadable'
         elif 'incomplete' in classifications_set:
-            return 'incomplete'
+            return 'unreadable'
         elif 'no label' in classifications_set:
             return 'no label'
         else:
             return 'unlabeled'
+
 
     def diagnose_session_classification(self, target_session_id):
         """Diagnostic method to analyze classification for a specific session"""
