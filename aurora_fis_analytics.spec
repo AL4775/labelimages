@@ -6,6 +6,13 @@ import sys
 import os
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
+# Ensure setuptools is available for vendored jaraco modules
+try:
+    import setuptools
+    import pkg_resources
+except ImportError:
+    pass
+
 # Define the main script
 main_script = 'image_label_tool.py'
 
@@ -22,6 +29,20 @@ opencv_datas = collect_data_files('cv2')
 matplotlib_hiddenimports = collect_submodules('matplotlib')
 seaborn_hiddenimports = collect_submodules('seaborn')
 cv2_hiddenimports = collect_submodules('cv2')
+
+# Collect jaraco submodules (now that we have them installed)
+try:
+    jaraco_hiddenimports = collect_submodules('jaraco')
+    # Filter out CLI tools with hyphens in names
+    jaraco_hiddenimports = [mod for mod in jaraco_hiddenimports if '-' not in mod.split('.')[-1]]
+except Exception as e:
+    print(f"Warning: Could not collect jaraco modules: {e}")
+    jaraco_hiddenimports = [
+        'jaraco.text',
+        'jaraco.functools', 
+        'jaraco.context',
+        'jaraco.collections',
+    ]
 
 block_cipher = None
 
@@ -73,6 +94,7 @@ a = Analysis(
         *matplotlib_hiddenimports,
         *seaborn_hiddenimports,
         *cv2_hiddenimports,
+        *jaraco_hiddenimports,
         
         # System and file operations
         'os',
@@ -88,6 +110,18 @@ a = Analysis(
         # Additional imports that might be dynamically loaded
         'pkg_resources',
         'pkg_resources.py2_warn',
+        
+        # jaraco dependencies (now properly installed)
+        'jaraco',
+        'jaraco.text',
+        'jaraco.functools', 
+        'jaraco.context',
+        'jaraco.collections',
+        
+        # setuptools and its vendored packages
+        'setuptools',
+        'setuptools._vendor',
+        'setuptools._vendor.packaging',
     ],
     hookspath=[],
     hooksconfig={},
@@ -106,7 +140,7 @@ a = Analysis(
         'tornado',
         'sphinx',
         'pytest',
-        'setuptools',
+        # Don't exclude setuptools - it's needed for jaraco modules
         'pip',
     ],
     win_no_prefer_redirects=False,

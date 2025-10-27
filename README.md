@@ -14,6 +14,7 @@ A professional image labeling tool for efficient review and categorization of im
 ✅ **CSV Export** - Timestamped CSV files with image and parcel information  
 ✅ **Progress Tracking** - Real-time statistics with percentage calculations  
 ✅ **Filter System** - Focus on specific label categories  
+✅ **Double-Click Zoom** - Smart zoom in/out (2x) centered at click location
 ✅ **Modern UI** - Professional design with intuitive color coding  
 ✅ **Standalone Executable** - No Python installation required for end users  
 

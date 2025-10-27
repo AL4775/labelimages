@@ -25,7 +25,11 @@ MANIFEST
 
 # PyInstaller
 *.manifest
-*.spec
+# Note: Keep .spec files for building executables
+# *.spec
+
+# PyInstaller output
+dist/
 
 # Virtual environments
 env/
@@ -57,8 +61,9 @@ revision_*.csv
 test_images/
 *.log
 
-# Executable files (use GitHub Releases instead)
+# Large files (use GitHub Releases instead)
 *.exe
+*.zip
 
 # Temporary files
 *.tmp

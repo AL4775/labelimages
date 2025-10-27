@@ -14,7 +14,7 @@ import logging
 import multiprocessing
 
 # Application version
-VERSION = "3.0.1"
+VERSION = "2.1.5"
 
 # Classification labels
 LABELS = ["(Unclassified)", "no label", "read failure", "incomplete", "unreadable"]
@@ -33,156 +33,88 @@ except ImportError:
     FigureCanvasTkAgg = None
     sns = None
 
+# Optional imports for charting functionality
+HAS_MATPLOTLIB = False
 LABELS = ["(Unclassified)", "no label", "read failure", "incomplete", "unreadable"]
 
 class ImageLabelTool:
-    def generate_sessions_tree(self):
-        """Create a Sessions Tree export grouped by session class and session ID."""
-        from collections import defaultdict
+    def generate_unread_session_folder(self):
+        """Export all images from unreadable sessions into a timestamped folder."""
         import shutil
+        from datetime import datetime
+        import os
         from tkinter import messagebox
 
-        if not getattr(self, 'folder_path', None):
-            messagebox.showwarning("Sessions Tree", "Please select a folder before generating the sessions tree.")
+        # Find all sessions (by session ID) that have at least one unreadable image
+        # Then, for those sessions, collect all images labeled as unreadable, read failure, or incomplete
+        def get_session_id(path):
+            # Use the same logic as get_session_number if available, else fallback to filename prefix
+            try:
+                filename = os.path.basename(path)
+                parts = filename.split('_')
+                if len(parts) >= 2:
+                    return parts[0]  # Use first part as session/trigger ID
+                else:
+                    return filename
+            except Exception:
+                return path
+
+
+        # Step 1: Build a mapping from session_id to all image labels in that session (including unlabeled images)
+        session_labels = {}
+        for path in self.all_image_paths:
+            session_id = get_session_id(path)
+            label = self.labels.get(path, "(Unclassified)")
+            session_labels.setdefault(session_id, []).append(label)
+
+        # Step 2: Find all session IDs that are NOT 'no label' sessions (i.e., not all images are labeled as 'no label')
+        valid_sessions = set()
+        for session_id, labels in session_labels.items():
+            # Exclude sessions where all images are labeled as 'no label'
+            if not labels:
+                continue
+            if not all(lab == "no label" for lab in labels):
+                valid_sessions.add(session_id)
+
+        if not valid_sessions:
+            messagebox.showinfo("No Valid Sessions", "There are no sessions with images labeled other than 'no label'.")
             return
 
-        if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
-            messagebox.showinfo("Sessions Tree", "No images are currently loaded. Select a folder first.")
+        # Step 3: Collect all images in those sessions with label unreadable, read failure, or incomplete
+        export_labels = {"unreadable", "read failure", "incomplete"}
+        images_to_export = []
+        for path in self.all_image_paths:
+            session_id = get_session_id(path)
+            label = self.labels.get(path, "(Unclassified)")
+            if session_id in valid_sessions and label in export_labels:
+                images_to_export.append(path)
+
+        if not images_to_export:
+            messagebox.showinfo("No Images to Export", "No images with the required labels found in valid sessions.")
             return
 
-        sessions = defaultdict(list)
-        for image_path in self.all_image_paths:
-            session_id = self.get_session_number(image_path) or "unknown"
-            sessions[session_id].append(image_path)
+        # Create export folder with timestamp under the selected folder
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if self.folder_path:
+            export_folder = os.path.join(self.folder_path, f"unreadable_sessions_{timestamp}")
+        else:
+            export_folder = os.path.join(os.getcwd(), f"unreadable_sessions_{timestamp}")
+        os.makedirs(export_folder, exist_ok=True)
 
-        if not sessions:
-            messagebox.showinfo("Sessions Tree", "No sessions were detected in the selected folder.")
-            return
-
-        session_labels_map = self.calculate_session_labels()
-
-        tree_root = os.path.join(self.folder_path, "Sessions Tree")
-
-        try:
-            if os.path.exists(tree_root):
-                shutil.rmtree(tree_root)
-            os.makedirs(tree_root, exist_ok=True)
-        except Exception as exc:
-            messagebox.showerror("Sessions Tree", f"Unable to prepare destination folder:\n{tree_root}\n\n{exc}")
-            return
-
-        total_sessions = len(sessions)
-        progress_window = tk.Toplevel(self.root)
-        progress_window.title("Generating Sessions Tree")
-        progress_window.transient(self.root)
-        progress_window.resizable(False, False)
-        progress_window.protocol("WM_DELETE_WINDOW", lambda: None)
-        progress_label_var = tk.StringVar(value="Preparing...")
-        tk.Label(progress_window, textvariable=progress_label_var, font=("Arial", 11)).pack(padx=20, pady=(20, 10))
-        progress_bar = ttk.Progressbar(progress_window, length=300, mode="determinate", maximum=total_sessions)
-        progress_bar.pack(padx=20, pady=(0, 20))
-        progress_window.update_idletasks()
-
-        total_copied = 0
-        session_counts_by_class = defaultdict(int)
-        errors = []
-        processed_sessions = 0
-
-        try:
-            for session_id, session_images in sessions.items():
-                session_label = session_labels_map.get(session_id)
-                if not session_label:
-                    # Derive a label using the existing classification logic when necessary
-                    classifications = [self.labels.get(path, "(Unclassified)") for path in session_images]
-                    classified_only = [cls for cls in classifications if cls != "(Unclassified)"]
-                    if classified_only:
-                        session_label = self.determine_session_classification(classified_only, session_image_paths=session_images)
-                    else:
-                        session_label = "unlabeled"
-
-                folder_label = self._format_session_label_for_tree(session_label)
-                folder_session_id = self._format_session_identifier_for_tree(session_id)
-                class_folder = os.path.join(tree_root, folder_label)
-                session_folder = os.path.join(class_folder, f"Session_{folder_session_id}_{folder_label}")
-
+        # Copy images
+        copied = 0
+        for img_path in images_to_export:
+            if os.path.isfile(img_path):
                 try:
-                    os.makedirs(class_folder, exist_ok=True)
-                    os.makedirs(session_folder, exist_ok=True)
-                except Exception as exc:
-                    errors.append((session_folder, exc))
-                    continue
+                    shutil.copy2(img_path, export_folder)
+                    copied += 1
+                except Exception as e:
+                    print(f"Failed to copy {img_path}: {e}")
 
-                session_counts_by_class[folder_label] += 1
-
-                for source_path in session_images:
-                    if not os.path.isfile(source_path):
-                        continue
-                    if self.false_noread.get(source_path, False):
-                        # Skip False NoRead images entirely, regardless of session classification
-                        continue
-                    destination_path = os.path.join(session_folder, os.path.basename(source_path))
-                    try:
-                        shutil.copy2(source_path, destination_path)
-                        total_copied += 1
-                    except Exception as exc:
-                        errors.append((source_path, exc))
-
-                processed_sessions += 1
-                progress_bar['value'] = processed_sessions
-                progress_label_var.set(f"Processing session {processed_sessions}/{total_sessions}: {folder_session_id}")
-                progress_window.update_idletasks()
-        finally:
-            progress_window.destroy()
-
-        total_sessions_exported = sum(session_counts_by_class.values())
-
-        if errors:
-            problem_samples = "\n".join(f"- {os.path.basename(path)}: {err}" for path, err in errors[:5])
-            if len(errors) > 5:
-                problem_samples += f"\n...and {len(errors) - 5} more."
-            messagebox.showwarning(
-                "Sessions Tree",
-                f"Created class folders with {total_sessions_exported} session(s) at:\n{tree_root}\n\n"
-                f"Copied {total_copied} image(s), but {len(errors)} item(s) failed:\n{problem_samples}"
-            )
-        else:
-            breakdown_lines = [f"- {label}: {count}" for label, count in sorted(session_counts_by_class.items())]
-            breakdown_text = "\n".join(breakdown_lines) if breakdown_lines else "(no sessions)"
-            messagebox.showinfo(
-                "Sessions Tree",
-                f"Created class folders with {total_sessions_exported} session(s) at:\n{tree_root}\n\n"
-                f"Copied {total_copied} image(s).\n\nBreakdown:\n{breakdown_text}"
-            )
-
-    def _format_session_label_for_tree(self, label):
-        """Return a filesystem-friendly label string such as 'NoLabel' or 'ReadFailure'."""
-        if not label:
-            label = "unlabeled"
-        label = label.replace("(Unclassified)", "Unclassified")
-        # Insert spaces before camel-case boundaries to improve readability
-        label = re.sub(r"(?<!^)(?=[A-Z])", " ", label)
-        parts = re.split(r"[\s/_-]+", label.strip())
-        formatted = "".join(part.capitalize() for part in parts if part)
-        return formatted or "Unlabeled"
-
-    def _format_session_identifier_for_tree(self, session_id):
-        """Normalize the session identifier for folder naming while keeping it recognizable."""
-        if not session_id:
-            return "Unknown"
-        parts = session_id.split('_') if '_' in session_id else session_id.split('-')
-        if parts:
-            base_part = parts[0].lstrip('0') or parts[0] or "0"
-            remainder = parts[1:]
-        else:
-            base_part = session_id
-            remainder = []
-        sanitized_parts = [re.sub(r"[^A-Za-z0-9-]", "", base_part)]
-        for segment in remainder:
-            cleaned = re.sub(r"[^A-Za-z0-9-]", "", segment)
-            if cleaned:
-                sanitized_parts.append(cleaned)
-        sanitized_parts = [part for part in sanitized_parts if part]
-        return "_".join(sanitized_parts) if sanitized_parts else "Unknown"
+        messagebox.showinfo(
+            "Export Complete",
+            f"Copied {copied} image(s) (unreadable/read failure/incomplete) from unreadable sessions to:\n{export_folder}"
+        )
     def __init__(self, root):
         self.root = root
         self.root.title(f"Aurora FIS Analytics INTERNAL tool v{VERSION}")
@@ -310,18 +242,6 @@ class ImageLabelTool:
         filter_frame = tk.Frame(top_frame, bg="#FAFAFA")
         filter_frame.pack(side=tk.LEFT, padx=(20, 0))
         tk.Label(filter_frame, text="Filter:", bg="#FAFAFA", font=("Arial", 10)).pack(side=tk.LEFT)
-
-        # Session filter entry (disabled by default until Session # filter is selected)
-        self.session_filter_label = tk.Label(filter_frame, text="#", bg="#FAFAFA", font=("Arial", 10))
-        self.session_filter_label.pack(side=tk.LEFT, padx=(8, 2))
-        self.session_filter_var = tk.StringVar()
-        self.session_filter_entry = tk.Entry(filter_frame, textvariable=self.session_filter_var, width=10,
-                                            font=("Arial", 10), bg="white", relief="solid", bd=1)
-        self.session_filter_entry.pack(side=tk.LEFT, padx=(0, 5))
-        self.session_filter_entry.configure(state=tk.DISABLED, disabledbackground="#E0E0E0", disabledforeground="#666666")
-        self.session_filter_entry.bind('<KeyRelease>', self.on_session_filter_changed)
-        self.session_filter_entry.bind('<Return>', lambda event: self.on_session_filter_changed())
-
         self.filter_var = tk.StringVar(value="(Unclassified) only")
         filter_options = [
             "All images",
@@ -331,8 +251,7 @@ class ImageLabelTool:
             "incomplete only",
             "unreadable only",
             "OCR recovered only",
-            "False NoRead only",
-            "Session #"
+            "False NoRead only"
         ]
         self.filter_menu = tk.OptionMenu(filter_frame, self.filter_var, *filter_options, command=self.on_filter_changed)
         self.filter_menu.config(bg="#F5F5F5", font=("Arial", 10), relief="solid", bd=1)
@@ -400,12 +319,12 @@ class ImageLabelTool:
                                              padx=8, pady=3, relief="flat")
         self.btn_gen_filter_folder.pack(side=tk.LEFT, padx=(0, 5))
 
-        # Export button for sessions tree
-        self.btn_gen_sessions_tree = tk.Button(toolbar_frame, text="Gen Sessions Tree", 
-                                              command=self.generate_sessions_tree,
-                                              bg="#607D8B", fg="white", font=("Arial", 10, "bold"),
-                                              padx=8, pady=3, relief="flat")
-        self.btn_gen_sessions_tree.pack(side=tk.LEFT, padx=(0, 5))
+        # Export button for unreadable sessions
+        self.btn_gen_unread_session = tk.Button(toolbar_frame, text="Gen Unread Session", 
+                                               command=self.generate_unread_session_folder,
+                                               bg="#607D8B", fg="white", font=("Arial", 10, "bold"),
+                                               padx=8, pady=3, relief="flat")
+        self.btn_gen_unread_session.pack(side=tk.LEFT, padx=(0, 5))
 
         # Export button for session IDs CSV
         self.btn_gen_sessions_csv = tk.Button(toolbar_frame, text="Gen Sessions CSV", 
@@ -466,10 +385,6 @@ class ImageLabelTool:
         self.canvas.bind("<Button-1>", self.start_pan)
         self.canvas.bind("<B1-Motion>", self.do_pan)
         self.canvas.bind("<MouseWheel>", self.mouse_wheel_zoom)
-        
-        # Bind double-click events for zoom
-        self.canvas.bind("<Double-Button-1>", self.double_click_zoom_in)
-        self.canvas.bind("<Control-Double-Button-1>", self.double_click_zoom_out)
         
         # Add file status above label buttons - reduced spacing
         self.status_var = tk.StringVar()
@@ -548,9 +463,9 @@ class ImageLabelTool:
             rb.grid(row=0, column=i, padx=1, pady=1, sticky="ew")  # Single row layout
             self.radio_buttons.append(rb)
         
-        # OCR Readable and False NoRead checkboxes (side by side)
+        # OCR Readable checkbox (separate from radio buttons)
         ocr_frame = tk.Frame(label_frame, bg="#FAFAFA")
-        ocr_frame.pack(pady=(8, 0))  # Add some space above the checkboxes
+        ocr_frame.pack(pady=(8, 0))  # Add some space above the checkbox
         
         self.ocr_readable_var = tk.BooleanVar()
         self.ocr_checkbox = tk.Checkbutton(ocr_frame, text="OCR Readable (T)", 
@@ -558,7 +473,7 @@ class ImageLabelTool:
                                          command=self.on_ocr_checkbox_changed,
                                          bg="#E8F5E8", font=("Arial", 11, "bold"),
                                          selectcolor="white", padx=5, pady=2)
-        self.ocr_checkbox.pack(side=tk.LEFT, padx=(0, 5))  # Left side with right margin
+        self.ocr_checkbox.pack()
         
         # False NoRead checkbox
         self.false_noread_var = tk.BooleanVar()
@@ -567,7 +482,7 @@ class ImageLabelTool:
                                                   command=self.on_false_noread_checkbox_changed,
                                                   bg="#FFE8E8", font=("Arial", 11, "bold"),
                                                   selectcolor="white", padx=5, pady=2)
-        self.false_noread_checkbox.pack(side=tk.LEFT, padx=(5, 0))  # Right side with left margin
+        self.false_noread_checkbox.pack(pady=(2, 0))
         
         # Navigation buttons (right side) - stacked vertically for width efficiency
         nav_buttons_frame = tk.Frame(nav_label_container, bg="#FAFAFA")
@@ -1079,27 +994,29 @@ class ImageLabelTool:
             self.scale_info_var.set("")
             return
             
-        # Display image directly without aggressive blinking
-        self._display_image_direct()
+        # Blink effect: Clear display briefly before showing new image
+        self.canvas.delete("all")
+        self.canvas.configure(bg="#F0F0F0")  # Brief light gray flash
+        self.root.update_idletasks()  # Force UI update without blocking
+        
+        # Schedule the actual image display after blink delay
+        self.root.after(25, self._display_image_after_blink)
     
-    def _display_image_direct(self):
-        """Display the image directly without blinking effect"""
+    def _display_image_after_blink(self):
+        """Display the actual image after blink effect"""
         if not self.image_paths:
             return
             
         path = self.image_paths[self.current_index]
         img = Image.open(path)
         original_width, original_height = img.size
-            # Debug: uncomment for troubleshooting
-            # print(f"📂 LOAD DEBUG: Loaded image {os.path.basename(path)} size ({original_width}x{original_height})")
         
         # Apply histogram equalization if enabled
         if hasattr(self, 'histogram_eq_enabled') and self.histogram_eq_enabled.get():
             img = self.apply_histogram_equalization(img)
-            # Debug: uncomment for troubleshooting
-            # new_width, new_height = img.size
-            # print(f"📂 LOAD DEBUG: After histogram equalization size ({new_width}x{new_height})")        # Clear any previous content and set normal background
-        self.canvas.configure(bg="black")
+        
+        # Restore canvas background and clear any previous content
+        self.canvas.configure(bg="black")  # Restore normal background
         self.canvas.delete("all")
         
         # Get canvas dimensions (reduced for ultra-compact layout)
@@ -1116,39 +1033,14 @@ class ImageLabelTool:
             
             if scale_factor != 1.0:
                 display_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                # Debug: uncomment for troubleshooting
-                # print(f"🔧 RESIZE DEBUG: {original_width}x{original_height} * {scale_factor:.3f} = {new_width}x{new_height} -> actual {display_img.size}")
             else:
                 display_img = img
-                # Debug: uncomment for troubleshooting  
-                # print(f"🔧 RESIZE DEBUG: No resize needed, keeping {display_img.size}")
             
             self.current_scale_factor = scale_factor
             scale_text = f"Scale: {scale_factor:.2f}\n({scale_factor*100:.1f}%)"
             
-            # Add padding around the image so any point can be centered
-            # Padding should be at least half the canvas size to allow full centering
-            padding_x = max(canvas_width // 2, 200)
-            padding_y = max(canvas_height // 2, 200)
-            
-            # Set scroll region with padding
-            scroll_width = new_width + 2 * padding_x
-            scroll_height = new_height + 2 * padding_y
-            self.canvas.configure(scrollregion=(0, 0, scroll_width, scroll_height))
-            
-            # Store expected dimensions for centering verification
-            self._expected_scroll_width = scroll_width
-            self._expected_scroll_height = scroll_height
-            
-            # Store padding for coordinate calculations
-            self.image_padding_x = padding_x
-            self.image_padding_y = padding_y
-            
-            # Debug: uncomment for troubleshooting
-            # print(f"📐 DISPLAY DEBUG: Image size ({new_width}x{new_height})")
-            # print(f"📐 DISPLAY DEBUG: Canvas size ({canvas_width}x{canvas_height})")
-            # print(f"📐 DISPLAY DEBUG: Padding ({padding_x}x{padding_y})")
-            # print(f"📐 DISPLAY DEBUG: Scroll region ({scroll_width}x{scroll_height})")
+            # Set scroll region to image size
+            self.canvas.configure(scrollregion=(0, 0, new_width, new_height))
             
             if new_width > canvas_width or new_height > canvas_height:
                 scale_text += "\nUse mouse to pan"
@@ -1185,10 +1077,8 @@ class ImageLabelTool:
         # Center the image in the canvas
         img_width, img_height = display_img.size
         if self.scale_1to1:
-            # For 1:1 mode, place image with padding offset for proper centering
-            # Debug: uncomment for troubleshooting
-            # print(f"🖼️  IMAGE DEBUG: Placing image at ({self.image_padding_x}, {self.image_padding_y})")
-            self.canvas.create_image(self.image_padding_x, self.image_padding_y, anchor="nw", image=self.tk_img)
+            # For 1:1 mode, place image at origin for proper scrolling
+            self.canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
         else:
             # For fitted mode, center the image
             center_x = canvas_width // 2
@@ -1242,22 +1132,120 @@ class ImageLabelTool:
         
         # Update navigation buttons
         self.update_navigation_buttons()
+        
+        # Get canvas dimensions (reduced for ultra-compact layout)
+        canvas_width = max(350, self.canvas.winfo_width())  # Reduced from 400
+        canvas_height = max(250, self.canvas.winfo_height())  # Reduced from 300
+        if canvas_width <= 1 or canvas_height <= 1:
+            canvas_width, canvas_height = 350, 350  # Smaller default size
+        
+        if self.scale_1to1:
+            # Show image at 1:1 scale with current zoom level
+            scale_factor = self.zoom_level
+            new_width = int(original_width * scale_factor)
+            new_height = int(original_height * scale_factor)
+            
+            if scale_factor != 1.0:
+                display_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            else:
+                display_img = img
+            
+            self.current_scale_factor = scale_factor
+            scale_text = f"Scale: {scale_factor:.2f}\n({scale_factor*100:.1f}%)"
+            
+            # Set scroll region to image size
+            self.canvas.configure(scrollregion=(0, 0, new_width, new_height))
+            
+            if new_width > canvas_width or new_height > canvas_height:
+                scale_text += "\nUse mouse to pan"
+                # Show scrollbars
+                self.h_scrollbar.grid(row=1, column=0, sticky="ew")
+                self.v_scrollbar.grid(row=0, column=1, sticky="ns")
+            else:
+                # Hide scrollbars if not needed
+                self.h_scrollbar.grid_remove()
+                self.v_scrollbar.grid_remove()
+        else:
+            # Calculate scale factor needed to fit image (fitted mode)
+            scale_x = canvas_width / original_width
+            scale_y = canvas_height / original_height
+            scale_factor = min(scale_x, scale_y)
+            self.current_scale_factor = scale_factor
+            self.zoom_level = scale_factor  # Sync zoom level with fitted scale
+            
+            # Resize image to fit available space while maintaining aspect ratio
+            display_img = img.copy()
+            display_img.thumbnail((canvas_width, canvas_height), Image.Resampling.LANCZOS)
+            
+            scale_text = f"Scale: {scale_factor:.2f}\n({scale_factor*100:.1f}%)\nFitted to window"
+            
+            # Reset scroll region for fitted mode and center the image
+            img_width, img_height = display_img.size
+            self.canvas.configure(scrollregion=(0, 0, canvas_width, canvas_height))
+            # Hide scrollbars in fitted mode
+            self.h_scrollbar.grid_remove()
+            self.v_scrollbar.grid_remove()
+        
+        self.tk_img = ImageTk.PhotoImage(display_img)
+        
+        # Center the image in the canvas
+        img_width, img_height = display_img.size
+        if self.scale_1to1:
+            # For 1:1 mode, place image at origin for proper scrolling
+            self.canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
+        else:
+            # For fitted mode, center the image
+            center_x = canvas_width // 2
+            center_y = canvas_height // 2
+            self.canvas.create_image(center_x, center_y, anchor="center", image=self.tk_img)
+        
+        self.scale_info_var.set(scale_text)
+        
+        label = self.labels.get(path, LABELS[0])
+        self.label_var.set(label)
+        
+        # Update OCR readable checkbox status
+        ocr_status = self.ocr_readable.get(path, False)
+        self.ocr_readable_var.set(ocr_status)
+        
+        # Update False NoRead checkbox status
+        false_noread_status = self.false_noread.get(path, False)
+        self.false_noread_var.set(false_noread_status)
+        
+        # Update False NoRead checkbox enabled/disabled state
+        self.update_false_noread_checkbox_state()
+        
+        # Update comment field with current image's comment
+        if hasattr(self, 'comment_text'):
+            comment_text = self.comments.get(path, "")
+            # Temporarily disable event bindings to prevent triggering on_comment_change during programmatic updates
+            self.comment_text.unbind('<KeyRelease>')
+            self.comment_text.unbind('<FocusOut>')
+            
+            # Clear and set the Text widget content
+            self.comment_text.delete("1.0", tk.END)
+            self.comment_text.insert("1.0", comment_text)
+            
+            # Re-bind the events after programmatic update is complete
+            self.comment_text.bind('<KeyRelease>', self.on_comment_change)
+            self.comment_text.bind('<FocusOut>', self.on_comment_change)
+            
+            # Update comment field state based on classification and filter status
+            self.update_comment_field_state()
+        
+        # Update current image filename in comment section
+        if hasattr(self, 'current_image_filename_var'):
+            filename = os.path.basename(path)
+            self.current_image_filename_var.set(f"📄 {filename}")
+        
+        self.status_var.set(f"{os.path.basename(path)} ({self.current_index+1}/{len(self.image_paths)}) - {original_width}x{original_height}px")
+        
+        # Update progress and label status
+        self.update_progress_display()
         self.update_current_label_status()
         
         # Update navigation buttons
         self.update_navigation_buttons()
-
-    def blink_status_text(self):
-        """Create a subtle blink effect on the status text (normal -> bold -> normal)"""
-        # Store original font
-        original_font = self.status.cget("font")
-        
-        # Change to bold
-        self.status.config(font=("Arial", 12, "bold"))
-        self.root.update_idletasks()
-        
-        # Schedule return to normal after 150ms
-        self.root.after(150, lambda: self.status.config(font=original_font))
 
     def prev_image(self):
         if self.current_index > 0:
@@ -1265,8 +1253,6 @@ class ImageLabelTool:
             # Reset to fit mode when navigating to new image
             self.reset_to_fit_mode()
             self.show_image()
-            # Add subtle text blink for navigation feedback
-            self.blink_status_text()
 
     def go_to_first_image(self):
         """Jump to the first image in the list."""
@@ -1275,8 +1261,6 @@ class ImageLabelTool:
             # Reset to fit mode when navigating to new image
             self.reset_to_fit_mode()
             self.show_image()
-            # Add subtle text blink for navigation feedback
-            self.blink_status_text()
 
     def next_image(self):
         if self.current_index < len(self.image_paths) - 1:
@@ -1284,8 +1268,6 @@ class ImageLabelTool:
             # Reset to fit mode when navigating to new image
             self.reset_to_fit_mode()
             self.show_image()
-            # Add subtle text blink for navigation feedback
-            self.blink_status_text()
 
     def jump_to_next_unclassified(self):
         """Jump to the next unclassified image after the current index."""
@@ -1304,11 +1286,10 @@ class ImageLabelTool:
             if path not in self.labels or self.labels[path] == "(Unclassified)":
                 self.current_index = check_index
                 self.show_image()
-                # Add subtle text blink for navigation feedback
-                self.blink_status_text()
                 return
         
         # If no unclassified images found, show a message
+        import tkinter.messagebox as messagebox
         messagebox.showinfo("Navigation", "No unclassified images found.")
 
     def jump_to_trigger_id(self):
@@ -1318,6 +1299,7 @@ class ImageLabelTool:
             
         # Check if filter is set to "All images"
         if self.filter_var.get() != "All images":
+            import tkinter.messagebox as messagebox
             messagebox.showwarning("Jump to Trigger ID", 
                                  "Jump to Trigger ID only works when filter is set to 'All images'.")
             return
@@ -1325,21 +1307,19 @@ class ImageLabelTool:
         # Get the trigger ID from the input field
         trigger_id_input = self.jump_trigger_var.get().strip()
         if not trigger_id_input:
+            import tkinter.messagebox as messagebox
             messagebox.showwarning("Jump to Trigger ID", "Please enter a Trigger ID.")
             return
         
         # Normalize the input (remove leading zeros if it's numeric)
-        normalized_trigger_id = None
         try:
             # If it's a number, convert to int then back to string to remove leading zeros
             if trigger_id_input.isdigit():
                 normalized_trigger_id = str(int(trigger_id_input))
             else:
-                messagebox.showwarning("Jump to Trigger ID", "Please enter a valid numeric Trigger ID.")
-                return
+                messagebox.showwarning("Jump to Trigger ID", "Please enter a Trigger ID.")
         except ValueError:
-            messagebox.showwarning("Jump to Trigger ID", "Please enter a valid numeric Trigger ID.")
-            return
+            messagebox.showwarning("Jump to Trigger ID", "Please enter a Trigger ID.")
         
         # Search for the first image with the matching trigger ID
         for i, path in enumerate(self.image_paths):
@@ -1370,8 +1350,7 @@ class ImageLabelTool:
                     self.comment_text.bind('<KeyRelease>', self.on_comment_change)
                     self.comment_text.bind('<FocusOut>', self.on_comment_change)
                     return
-        if normalized_trigger_id is None:
-            normalized_trigger_id = trigger_id_input
+        import tkinter.messagebox as messagebox
         messagebox.showinfo("Jump to Trigger ID", 
                            f"No image found with Trigger ID: {normalized_trigger_id}")
 
@@ -1452,15 +1431,10 @@ class ImageLabelTool:
                 self.show_image()
 
     def on_ocr_checkbox_changed(self):
-        """Handle OCR readable checkbox changes - mutually exclusive with False NoRead"""
+        """Handle OCR readable checkbox changes"""
         if not self.image_paths:
             return
         path = self.image_paths[self.current_index]
-        
-        # If OCR is being checked, uncheck False NoRead (mutual exclusivity)
-        if self.ocr_readable_var.get():
-            self.false_noread_var.set(False)
-            self.false_noread[path] = False
         
         self.ocr_readable[path] = self.ocr_readable_var.get()
         self.save_csv()
@@ -1471,15 +1445,10 @@ class ImageLabelTool:
         self.update_current_label_status()
 
     def on_false_noread_checkbox_changed(self):
-        """Handle False NoRead checkbox changes - mutually exclusive with OCR"""
+        """Handle False NoRead checkbox changes"""
         if not self.image_paths:
             return
         path = self.image_paths[self.current_index]
-        
-        # If False NoRead is being checked, uncheck OCR (mutual exclusivity)
-        if self.false_noread_var.get():
-            self.ocr_readable_var.set(False)
-            self.ocr_readable[path] = False
         
         self.false_noread[path] = self.false_noread_var.get()
         self.save_csv()
@@ -1740,23 +1709,11 @@ class ImageLabelTool:
 
     def on_filter_changed(self, value=None):
         """Called when the filter dropdown changes"""
-        if hasattr(self, 'session_filter_entry'):
-            if self.filter_var.get() == "Session #":
-                self.session_filter_entry.config(state=tk.NORMAL, bg="white")
-                # Keep focus on the entry for quick typing when the session filter is active
-                self.session_filter_entry.focus_set()
-            else:
-                self.session_filter_entry.config(state=tk.DISABLED)
         self.apply_filter()
         self.update_filter_button_state()
         self.update_jump_button_state()
         # Update comment field state when filter changes
         self.update_comment_field_state()
-
-    def on_session_filter_changed(self, event=None):
-        """Re-apply filtering when the session filter input changes."""
-        if self.filter_var.get() == "Session #":
-            self.apply_filter()
 
     def on_comment_change(self, *args):
         """Called when the comment text field changes"""
@@ -1893,7 +1850,7 @@ class ImageLabelTool:
             try:
                 if chart_canvas:
                     chart_canvas.get_tk_widget().destroy()
-                if chart_figure and plt is not None:
+                if chart_figure:
                     plt.close(chart_figure)
             except:
                 pass  # Ignore any cleanup errors
@@ -1930,21 +1887,19 @@ class ImageLabelTool:
         
         sessions_no_code = 0
         sessions_read_failure = 0
-        sessions_unreadable_code = 0
-        sessions_false_noread = 0
-
+        sessions_ocr_readable = 0
+        
         for session_label in session_labels_dict.values():
             if session_label == "no label":
                 sessions_no_code += 1
             elif session_label == "read failure":
                 sessions_read_failure += 1
-            elif session_label == "unreadable":
-                sessions_unreadable_code += 1
-            elif session_label == "FalseNoRead":
-                sessions_false_noread += 1
-
+        
         # Calculate sessions with OCR readable images (separate from primary classification)
         sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
+        
+        # Calculate sessions with unreadable code (excluding no_code and read_failure)
+        sessions_unreadable_code = actual_sessions - sessions_no_code - sessions_read_failure
         
         # Calculate readable sessions using NEW formulas:
         # Total readable w/o OCR = total entered - session number + read failure
@@ -1959,7 +1914,7 @@ class ImageLabelTool:
         # Calculate successful reads (using w/ OCR total)
         sessions_successful_reads = total_readable_incl_ocr - sessions_read_failure
         
-        print("DEBUG: Using NEW calculation formulas:")
+        print(f"DEBUG: Using NEW calculation formulas:")
         print(f"  - Total entered: {total_entered}")
         print(f"  - Actual sessions found: {actual_sessions}")
         print(f"  - Sessions no label: {sessions_no_code}")
@@ -1967,7 +1922,6 @@ class ImageLabelTool:
         print(f"  - Sessions with OCR readable: {sessions_ocr_readable}")
         print(f"  - Sessions OCR readable (non-failure): {sessions_ocr_readable_non_failure}")
         print(f"  - Sessions unreadable code: {sessions_unreadable_code}")
-        print(f"  - Sessions False NoRead: {sessions_false_noread}")
         print(f"  - Total readable (excl OCR): {total_readable_excl_ocr}")
         print(f"  - Total readable (incl OCR): {total_readable_incl_ocr}")
         print(f"  - Successful reads: {sessions_successful_reads}")
@@ -1982,8 +1936,6 @@ class ImageLabelTool:
             session_stats["Sessions with OCR Recovered"] = sessions_ocr_readable
         if sessions_unreadable_code > 0:
             session_stats["Sessions with Unreadable Code"] = sessions_unreadable_code
-        if sessions_false_noread > 0:
-            session_stats["Sessions False NoRead"] = sessions_false_noread
         if sessions_successful_reads > 0:
             session_stats["Sessions with Successful Reads"] = sessions_successful_reads
         
@@ -1993,7 +1945,7 @@ class ImageLabelTool:
 
     def create_session_pie_chart_in_dialog(self, parent, session_data):
         """Create a pie chart showing session statistics in the given parent widget"""
-        if not HAS_MATPLOTLIB or plt is None:
+        if not HAS_MATPLOTLIB:
             return None, None
         
         # Set up matplotlib style
@@ -2026,22 +1978,14 @@ class ImageLabelTool:
             "Sessions with Read Failure": "#F44336",     # Red
             "Sessions with OCR Recovered": "#2196F3",     # Blue
             "Sessions with Unreadable Code": "#FF9800",  # Orange
-            "Sessions False NoRead": "#9C27B0",          # Purple
             "Sessions with Successful Reads": "#4CAF50"  # Green
         }
         
         colors = [color_map.get(label, "#9E9E9E") for label in labels]
         
         # Create pie chart with formatted multi-line labels
-        pie_result = ax.pie(sizes, labels=formatted_labels, colors=colors, autopct='%1.1f%%',
-                           startangle=90, textprops={'fontsize': 9, 'ha': 'center'})
-        
-        # Unpack pie chart results (can be 2 or 3 elements)
-        if len(pie_result) == 3:
-            wedges, texts, autotexts = pie_result
-        else:
-            wedges, texts = pie_result
-            autotexts = []
+        wedges, texts, autotexts = ax.pie(sizes, labels=formatted_labels, colors=colors, autopct='%1.1f%%',
+                                         startangle=90, textprops={'fontsize': 9, 'ha': 'center'})
         
         # Improve text readability
         for autotext in autotexts:
@@ -2059,12 +2003,9 @@ class ImageLabelTool:
         ax.axis('equal')
         
         # Embed in tkinter
-        if FigureCanvasTkAgg is not None:
-            canvas = FigureCanvasTkAgg(fig, parent)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        else:
-            canvas = None
+        canvas = FigureCanvasTkAgg(fig, parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         return canvas, fig
 
@@ -2273,121 +2214,6 @@ class ImageLabelTool:
             'timeout_ids': timeout_ids
         }
     
-    def _compute_log_tab_metrics(self, results, analysis_data, log_date_info):
-        """Compute derived metrics for the Log tab summary"""
-        session_labels_dict = self.calculate_session_labels()
-        session_ocr_status = self.calculate_session_ocr_readable_status()
-        session_counts = self.calculate_session_category_counts(session_labels_dict)
-        sessions_false_noread = session_counts['sessions_false_noread']
-
-        start_display = log_date_info['start_date'] if log_date_info else "Not available"
-        end_display = log_date_info['end_date'] if log_date_info else "Not available"
-
-        start_raw = log_date_info.get('start_timestamp_raw') if log_date_info else None
-        end_raw = log_date_info.get('end_timestamp_raw') if log_date_info else None
-        start_dt = self.parse_log_timestamp(start_raw) or self.parse_log_timestamp(start_display)
-        end_dt = self.parse_log_timestamp(end_raw) or self.parse_log_timestamp(end_display)
-
-        duration_seconds = None
-        duration_hours_value = None
-        if start_dt and end_dt:
-            duration_seconds = (end_dt - start_dt).total_seconds()
-            if duration_seconds >= 0:
-                duration_hours_value = duration_seconds / 3600
-
-        reading_sessions = results.get('unique_ids', 0)
-        false_triggers = results.get('false_triggers', 0)
-        valid_sessions = max(reading_sessions - false_triggers, 0)
-
-        no_code = session_counts['sessions_no_code']
-        read_failure = session_counts['sessions_read_failure']
-        unreadable = session_counts['sessions_unreadable']
-        effective_read_failure = max(read_failure, 0)
-        fail_reading_sessions = session_counts['adjusted_failed_sessions']
-
-        total_read_sessions = max(valid_sessions - fail_reading_sessions, 0)
-        total_readable_without_ocr = max(valid_sessions - no_code - unreadable, 0)
-
-        ocr_recovered_in_read_failure = sum(
-            1 for session_id, is_ocr in session_ocr_status.items()
-            if is_ocr and session_labels_dict.get(session_id) == "read failure"
-        )
-        ocr_recovered_in_unreadable = sum(
-            1 for session_id, is_ocr in session_ocr_status.items()
-            if is_ocr and session_labels_dict.get(session_id) == "unreadable"
-        )
-        total_ocr_recovered = ocr_recovered_in_read_failure + ocr_recovered_in_unreadable
-
-        decoder_net_rate = None
-        if total_readable_without_ocr > 0:
-            decoder_net_rate = (total_read_sessions / total_readable_without_ocr) * 100
-
-        system_gross_read_rate = None
-        system_net_rate_excl = None
-        system_net_rate_incl_read_failure_ocr = None
-        system_net_rate_incl_all_ocr = None
-        if valid_sessions > 0:
-            system_gross_read_rate = (total_read_sessions / valid_sessions) * 100
-            system_net_rate_excl = ((valid_sessions - effective_read_failure) / valid_sessions) * 100
-            system_net_rate_incl_read_failure_ocr = (
-                (valid_sessions - effective_read_failure + ocr_recovered_in_read_failure) / valid_sessions
-            ) * 100
-            system_net_rate_incl_all_ocr = (
-                (valid_sessions - effective_read_failure + total_ocr_recovered) / valid_sessions
-            ) * 100
-
-        system_read_failure_improvement = None
-        if system_net_rate_excl is not None and system_net_rate_incl_read_failure_ocr is not None:
-            system_read_failure_improvement = (
-                system_net_rate_incl_read_failure_ocr - system_net_rate_excl
-            )
-
-        def pct_text(value):
-            return f"{value:.2f}%" if value is not None else "N/A"
-
-        duration_display = (
-            self.format_duration_hms(duration_seconds)
-            if duration_seconds is not None and duration_seconds >= 0
-            else "N/A"
-        )
-        improvement_text = (
-            f"{system_read_failure_improvement:+.2f}%" if system_read_failure_improvement is not None else "N/A"
-        )
-
-        return {
-            'start_display': start_display,
-            'end_display': end_display,
-            'duration_hours_value': duration_hours_value,
-            'duration_display': duration_display,
-            'reading_sessions': reading_sessions,
-            'false_triggers': false_triggers,
-            'valid_sessions': valid_sessions,
-            'fail_reading_sessions': fail_reading_sessions,
-            'total_read_sessions': total_read_sessions,
-            'total_readable_without_ocr': total_readable_without_ocr,
-            'no_code_count': no_code,
-            'read_failure_count': read_failure,
-            'unreadable_count': unreadable,
-            'effective_read_failure_count': effective_read_failure,
-            'sessions_false_noread': sessions_false_noread,
-            'ocr_recovered_read_failure': ocr_recovered_in_read_failure,
-            'ocr_recovered_unreadable': ocr_recovered_in_unreadable,
-            'ocr_recovered_total': total_ocr_recovered,
-            'decoder_net_rate': decoder_net_rate,
-            'decoder_net_rate_text': pct_text(decoder_net_rate),
-            'system_gross_read_rate': system_gross_read_rate,
-            'system_gross_read_rate_text': pct_text(system_gross_read_rate),
-            'system_net_rate_excl': system_net_rate_excl,
-            'system_net_rate_excl_text': pct_text(system_net_rate_excl),
-            'system_net_rate_incl_read_failure_ocr': system_net_rate_incl_read_failure_ocr,
-            'system_net_rate_incl_read_failure_ocr_text': pct_text(system_net_rate_incl_read_failure_ocr),
-            'system_net_rate_incl_all_ocr': system_net_rate_incl_all_ocr,
-            'system_net_rate_incl_all_ocr_text': pct_text(system_net_rate_incl_all_ocr),
-            'system_read_failure_improvement': system_read_failure_improvement,
-            'system_read_failure_improvement_text': improvement_text,
-            'log_file_path': getattr(self, 'log_file_path', None)
-        }
-
     def display_log_analysis_results(self, results):
         """Display the log analysis results in the structured format requested"""
         self.log_results_text.config(state=tk.NORMAL)
@@ -2417,114 +2243,126 @@ class ImageLabelTool:
         # Get updated analysis data after the total parcels change
         analysis_data = self.get_analysis_data()
         
-        metrics = self._compute_log_tab_metrics(results, analysis_data, log_date_info)
-        self.current_log_metrics = metrics
+        # Format and display results in the requested structure
+        output = []
+        
+        # PATH section
+        output.append("=== PATH ===")
+        # Always show the full log file path
+        log_file_path = getattr(self, 'log_file_path', None)
+        if log_file_path:
+            output.append(f"Log File Path: {log_file_path}")
+        else:
+            output.append("Log File Path: Not set")
+        output.append("")  # Empty line
+        
+        # DATES section
+        output.append("=== DATES ===")
+        if log_date_info:
+            output.append(f"Start Date: {log_date_info['start_date']}")
+            output.append(f"End Date: {log_date_info['end_date']}")
+        else:
+            output.append("Start Date: Not available")
+            output.append("End Date: Not available")
+        
+        output.append("")  # Empty line
+        
+        # LOG FILE ANALYSIS section
+        output.append("=== LOG FILE ANALYSIS ===")
+        output.append(f"Number of sessions: {results['unique_ids']}")
+        
+        # Calculate read vs noread sessions
+        total_noread = results.get('total_noread', 0)
+        unique_ids = results['unique_ids']
+        read_sessions = unique_ids - total_noread
+        
+        output.append(f"Number of Read sessions: {read_sessions}")
+        output.append(f"Number of No-Read sessions: {total_noread}")
+        output.append(f"Number of False triggers: {results['false_triggers']}")
+        output.append(f"Number of Effective sessions: {results['effective_session_count']}")
+        
+        output.append("")  # Empty line
+        
+        # READING ANALYSIS section
+        output.append("=== READING ANALYSIS ===")
+        
+        # Number of Failed sessions is now equal to Number of No-Read sessions
 
-        text_widget = self.log_results_text
-        text_widget.tag_configure('header', font=("Arial", 11, "bold"))
-        text_widget.tag_configure('bold', font=("Arial", 10, "bold"))
-        text_widget.tag_configure('normal', font=("Arial", 10))
-        text_widget.tag_configure('error', font=("Arial", 10, "bold"), foreground="red")
-        text_widget.tag_configure('readrate', font=("Arial", 10, "bold"), foreground="#0D47A1")
-
-        def write_line(prefix, value=None, bold_value=False, line_tag=None, value_tag=None):
-            prefix_tag = line_tag if line_tag else 'normal'
-            if prefix:
-                text_widget.insert(tk.END, prefix, prefix_tag)
-            if value is not None:
-                chosen_tag = value_tag if value_tag else ('bold' if bold_value else prefix_tag)
-                text_widget.insert(tk.END, str(value), chosen_tag)
-            text_widget.insert(tk.END, "\n", prefix_tag)
-
-        def write_heading(title):
-            text_widget.insert(tk.END, f"{title}\n", 'header')
-            text_widget.insert(tk.END, f"{'=' * len(title)}\n", 'normal')
-
-        reading_sanity_sum = metrics['no_code_count'] + metrics['read_failure_count'] + metrics['unreadable_count']
-        fail_sanity_ok = (metrics['fail_reading_sessions'] == reading_sanity_sum)
-        fail_line_tag = 'error' if not fail_sanity_ok else None
-
-        write_line("Start: ", metrics['start_display'], bold_value=True)
-        write_line("End: ", metrics['end_display'], bold_value=True)
-        write_line("Duration hours: ", metrics['duration_display'], bold_value=True)
-
-        text_widget.insert(tk.END, "\n", 'normal')
-
-        write_heading("LOG FILE ANALYSIS")
-        write_line("Reading sessions (unique trigger ID detected): ", metrics['reading_sessions'], bold_value=True)
-        write_line("False triggers: ", metrics['false_triggers'], bold_value=True)
-        write_line("Valid sessions (effective parcel count): ", metrics['valid_sessions'])
-        write_line("Fail Reading sessions: ", metrics['fail_reading_sessions'], bold_value=True)
-        write_line("Total read sessions (excluding OCR): ", metrics['total_read_sessions'])
-
-        text_widget.insert(tk.END, "\n", 'normal')
-
-        write_heading("READING ANALYSIS")
-        write_line(
-            "Fail Reading sessions: ",
-            metrics['fail_reading_sessions'],
-            bold_value=True,
-            line_tag=fail_line_tag,
-            value_tag=fail_line_tag
+        output.append(f"Number of Failed sessions: {total_noread}")
+        no_code = analysis_data['no_code_count']
+        read_failure = analysis_data['read_failure_count']
+        # Use consistent formula: total_sessions - sessions_no_code - sessions_read_failure
+        total_unreadable = len(self.calculate_session_labels()) - no_code - read_failure
+        if total_unreadable < 0:
+            total_unreadable = 0
+        output.append(f"Number of No-Code sessions: {no_code}")
+        output.append(f"Number of Read-Failure sessions: {read_failure}")
+        output.append(f"Number of Unreadable sessions: {total_unreadable}")
+        # Calculate OCR recovery breakdowns
+        session_labels_dict = self.calculate_session_labels()
+        session_ocr_readable_dict = self.calculate_session_ocr_readable_status()
+        ocr_recovered_in_read_failure = sum(
+            1 for session_id, is_ocr in session_ocr_readable_dict.items()
+            if is_ocr and session_labels_dict.get(session_id) == "read failure"
         )
-        write_line("Sessions with no code (no-label/code): ", metrics['no_code_count'], bold_value=True)
-        write_line("Sessions with read failure (with label but no-read): ", metrics['read_failure_count'], bold_value=True)
-        write_line("Sessions with unreadable code: ", metrics['unreadable_count'], bold_value=True)
-        write_line("Sessions False NoRead: ", metrics['sessions_false_noread'])
-        write_line("Total number of readable sessions w/o OCR: ", metrics['total_readable_without_ocr'])
-
-        text_widget.insert(tk.END, "\n", 'normal')
-
-        write_heading("OCR ANALYSIS")
-        write_line("Sessions with read failure recovered with OCR: ", metrics['ocr_recovered_read_failure'], bold_value=True)
-        write_line("Sessions with unreadable code recovered with OCR: ", metrics['ocr_recovered_unreadable'], bold_value=True)
-        write_line("Total session OCR recovered: ", metrics['ocr_recovered_total'])
-
-        text_widget.insert(tk.END, "\n", 'normal')
-
-        write_heading("READ RATE")
-        write_line(
-            "Decoder Net Read Rate (excluding OCR): ",
-            metrics['decoder_net_rate_text'],
-            line_tag='readrate',
-            value_tag='readrate'
+        ocr_recovered_in_unreadable = sum(
+            1 for session_id, is_ocr in session_ocr_readable_dict.items()
+            if is_ocr and session_labels_dict.get(session_id) == "unreadable"
         )
-        write_line(
-            "System Gross Read Rate: ",
-            metrics['system_gross_read_rate_text'],
-            line_tag='readrate',
-            value_tag='readrate'
-        )
-        write_line(
-            "System Net Read Rate (excluding OCR): ",
-            metrics['system_net_rate_excl_text'],
-            line_tag='readrate',
-            value_tag='readrate'
-        )
-        write_line(
-            "System Net Read Rate (including read failure recovered by OCR): ",
-            metrics['system_net_rate_incl_read_failure_ocr_text'],
-            line_tag='readrate',
-            value_tag='readrate'
-        )
-        write_line(
-            "System Net Read Rate (including all recovered by OCR): ",
-            metrics['system_net_rate_incl_all_ocr_text'],
-            line_tag='readrate',
-            value_tag='readrate'
-        )
-        write_line(
-            "System read failure improvement thanks to OCR: ",
-            metrics['system_read_failure_improvement_text'],
-            line_tag='readrate',
-            value_tag='readrate'
-        )
+        # Correct calculation: non read failure = read failure + unreadable
+        ocr_recovered_non_failure = ocr_recovered_in_read_failure + ocr_recovered_in_unreadable
+        output.append(f"Number of OCR recovered (non read failure) sessions: {ocr_recovered_non_failure}")
+        output.append(f"Sub-Number of OCR recovered in 'read failure' sessions: {ocr_recovered_in_read_failure}")
+        output.append(f"Sub-Number of OCR recovered in 'unreadable' sessions: {ocr_recovered_in_unreadable}")
+        
+        # Add False NoRead sessions count from Analysis tab
+        sessions_false_noread = self.calculate_sessions_with_false_noread()
+        output.append(f"Number of False NoRead sessions: {sessions_false_noread}")
+        
 
-        if metrics.get('log_file_path'):
-            text_widget.insert(tk.END, "\n", 'normal')
-            write_line("Log file: ", metrics['log_file_path'])
-
-        text_widget.config(state=tk.DISABLED)
+        # Integrity check: No-Code + Read-Failure + Unreadable == Failed sessions
+        integrity_sum = no_code + read_failure + total_unreadable
+        integrity_ok = (integrity_sum == total_noread)
+        output.append(f"Integrity check: {no_code} + {read_failure} + {total_unreadable} = {integrity_sum}" + (" (OK)" if integrity_ok else f" (❌ MISMATCH: should be {total_noread})"))
+        
+        output.append("")  # Empty line
+        
+        # READ RATE section
+        output.append("=== READ RATE ===")
+        
+        # Calculate rates
+        gross_rate = self.calculate_gross_rate(results, analysis_data)
+        net_reading_performance = self.calculate_net_reading_performance(results, analysis_data)
+        
+        output.append(f"Gross read performance: {gross_rate:.1f}%")
+        output.append(f"Net read performance (excl. OCR): {net_reading_performance['excl_ocr']:.2f}%")
+        output.append(f"Net read performance (incl. OCR): {net_reading_performance['incl_ocr']:.2f}%")
+        
+        # Add OCR improvement percentage using centralized calculation
+        if net_reading_performance['excl_ocr'] >= 0 and net_reading_performance['incl_ocr'] >= 0:
+            # Get analysis data to calculate actual read numbers
+            total_entered = analysis_data.get('total_entered', 0)
+            actual_sessions = analysis_data.get('actual_sessions', 0)
+            sessions_read_failure = analysis_data.get('read_failure_count', 0)
+            sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
+            sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
+            sessions_false_noread = self.calculate_sessions_with_false_noread()
+            
+            # Use centralized calculation for OCR improvement
+            net_rates = self.calculate_net_rates_centralized(
+                total_entered, actual_sessions, sessions_read_failure, 
+                sessions_false_noread, sessions_ocr_readable, sessions_ocr_readable_non_failure
+            )
+            
+            if net_rates['successful_reads_excl_ocr'] > 0:
+                output.append(f"OCR read rate improvement: +{net_rates['ocr_improvement_percentage']:.2f}%")
+            else:
+                output.append("OCR read rate improvement: N/A (no baseline reads)")
+        
+        # Join and display
+        result_text = "\n".join(output)
+        self.log_results_text.insert(tk.END, result_text)
+        self.log_results_text.config(state=tk.DISABLED)
         
         # Enable export button
         self.enable_export_button()
@@ -2689,9 +2527,7 @@ class ImageLabelTool:
                 'start_date': start_date,
                 'end_date': end_date,
                 'start_id': start_entry['id'],
-                'end_id': end_entry['id'],
-                'start_timestamp_raw': start_entry['timestamp'],
-                'end_timestamp_raw': end_entry['timestamp']
+                'end_id': end_entry['id']
             }
             
         except Exception as e:
@@ -2723,79 +2559,33 @@ class ImageLabelTool:
             
         except Exception:
             return timestamp_str
-
-    def parse_log_timestamp(self, timestamp_str):
-        """Convert a log timestamp string into a datetime object when possible"""
-        if not timestamp_str:
-            return None
-
-        candidate_formats = [
-            '%Y-%m-%d %H:%M:%S',
-            '%m/%d/%Y %H:%M:%S',
-            '%d-%m-%Y %H:%M:%S',
-            '%Y%m%d_%H%M%S',
-            '%Y%m%d%H%M%S',
-            '%d/%m/%Y %H:%M:%S'
-        ]
-
-        for fmt in candidate_formats:
-            try:
-                return datetime.strptime(timestamp_str, fmt)
-            except ValueError:
-                continue
-
-        return None
-
-    def format_duration_hms(self, total_seconds):
-        """Format a duration in seconds as HH:MM:SS"""
-        try:
-            total_seconds = int(round(total_seconds))
-        except (TypeError, ValueError):
-            return "N/A"
-
-        sign = "-" if total_seconds < 0 else ""
-        total_seconds = abs(total_seconds)
-        hours, remainder = divmod(total_seconds, 3600)
-        minutes, seconds = divmod(remainder, 60)
-        return f"{sign}{hours:02d}:{minutes:02d}:{seconds:02d}"
     
     def get_analysis_data(self):
         """Get analysis data from current image classifications"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             return {'no_code_count': 0, 'read_failure_count': 0, 'ocr_readable_count': 0, 'total_sessions': 0, 'actual_sessions': 0, 'total_entered': 0}
             
-        # Calculate session labels and consistent category counts
+        # Calculate session labels
         session_labels_dict = self.calculate_session_labels()
-        session_counts = self.calculate_session_category_counts(session_labels_dict)
+        
+        # Count sessions by category
+        no_code_count = sum(1 for label in session_labels_dict.values() if label == "no label")
+        read_failure_count = sum(1 for label in session_labels_dict.values() if label == "read failure")
         ocr_readable_count = self.calculate_sessions_with_ocr_readable()
-
+        
         # Get actual sessions count (number of sessions found in images)
-        actual_sessions = session_counts['total_sessions']
-
+        actual_sessions = len(session_labels_dict)
+        
         # Get total entered (expected total from user input)
-        try:
-            total_entered = int(self.total_sessions_var.get()) if self.total_sessions_var.get() else 0
-        except ValueError:
-            total_entered = 0
-
-        failed_sessions_total = (
-            session_counts['sessions_no_code']
-            + session_counts['sessions_read_failure']
-            + session_counts['sessions_unreadable']
-        )
-
+        total_entered = int(self.total_sessions_var.get()) if self.total_sessions_var.get() else 0
+        
         return {
-            'no_code_count': session_counts['sessions_no_code'],
-            'read_failure_count': session_counts['sessions_read_failure'],
-            'unreadable_count': session_counts['sessions_unreadable'],
-            'sessions_false_noread': session_counts['sessions_false_noread'],
-            'sessions_unlabeled': session_counts['sessions_unlabeled'],
-            'adjusted_failed_sessions': session_counts['adjusted_failed_sessions'],
+            'no_code_count': no_code_count,
+            'read_failure_count': read_failure_count,
             'ocr_readable_count': ocr_readable_count,
-            'total_sessions': session_counts['total_sessions'],
+            'total_sessions': len(session_labels_dict),
             'actual_sessions': actual_sessions,
-            'total_entered': total_entered,
-            'failed_sessions_total': failed_sessions_total
+            'total_entered': total_entered
         }
     
     def calculate_gross_rate(self, log_results, analysis_data):
@@ -2803,11 +2593,9 @@ class ImageLabelTool:
         unique_ids = log_results['unique_ids']
         total_noread = log_results.get('total_noread', 0)
         
-        # Use effective session count for consistency
-        effective_session_count = log_results.get('effective_session_count', unique_ids)
-        if effective_session_count > 0:
-            read_parcels = effective_session_count - total_noread
-            return (read_parcels / effective_session_count) * 100
+        if unique_ids > 0:
+            read_parcels = unique_ids - total_noread
+            return (read_parcels / unique_ids) * 100
         return 0.0
     
     def calculate_net_reading_performance(self, log_results, analysis_data):
@@ -2853,7 +2641,6 @@ class ImageLabelTool:
             results = self.current_log_analysis
             log_date_info = self.extract_log_date_range()
             analysis_data = self.get_analysis_data()
-            metrics = self._compute_log_tab_metrics(results, analysis_data, log_date_info)
             
             # Generate the report content
             report_lines = []
@@ -2861,60 +2648,121 @@ class ImageLabelTool:
             report_lines.append("=" * 60)
             report_lines.append(f"Generated: {datetime.now().strftime('%d-%m-%Y %H:%M:%S')}")
             report_lines.append("")
-            report_lines.append(f"Start: {metrics['start_display']}")
-            report_lines.append(f"End: {metrics['end_display']}")
-            report_lines.append(f"Duration hours: {metrics['duration_display']}")
-            if metrics.get('log_file_path'):
-                report_lines.append(f"Log file: {metrics['log_file_path']}")
-
+            
+            # PATH section
+            report_lines.append("=== PATH ===")
+            if hasattr(self, 'folder_path') and self.folder_path:
+                report_lines.append(f"Folder Path: {self.folder_path}")
+            else:
+                report_lines.append("Folder Path: No folder selected")
+            
             report_lines.append("")
-
+            
+            # DATES section
+            report_lines.append("=== DATES ===")
+            if log_date_info:
+                report_lines.append(f"Start Date: {log_date_info['start_date']}")
+                report_lines.append(f"End Date: {log_date_info['end_date']}")
+            else:
+                report_lines.append("Start Date: Not available")
+                report_lines.append("End Date: Not available")
+            
+            report_lines.append("")
+            
+            # LOG FILE ANALYSIS section
             report_lines.append("LOG FILE ANALYSIS")
-            report_lines.append("=" * len("LOG FILE ANALYSIS"))
-            report_lines.append(f"Reading sessions (unique trigger ID detected): {metrics['reading_sessions']}")
-            report_lines.append(f"False triggers: {metrics['false_triggers']}")
-            report_lines.append(f"Valid sessions (effective parcel count): {metrics['valid_sessions']}")
-            report_lines.append(f"Fail Reading sessions: {metrics['fail_reading_sessions']}")
-            report_lines.append(f"Total read sessions (excluding OCR): {metrics['total_read_sessions']}")
-
+            report_lines.append("-" * 20)
+            report_lines.append(f"Number of sessions: {results['unique_ids']}")
+            
+            # Calculate read vs noread sessions
+            total_noread = results.get('total_noread', 0)
+            unique_ids = results['unique_ids']
+            read_sessions = unique_ids - total_noread
+            
+            report_lines.append(f"Number of Read sessions: {read_sessions}")
+            report_lines.append(f"Number of No-Read sessions: {total_noread}")
+            report_lines.append(f"Number of False triggers: {results['false_triggers']}")
+            report_lines.append(f"Number of Effective sessions: {results['effective_session_count']}")
+            
             report_lines.append("")
-
+            
+            # READING ANALYSIS section
             report_lines.append("READING ANALYSIS")
-            report_lines.append("=" * len("READING ANALYSIS"))
-            report_lines.append(f"Fail Reading sessions: {metrics['fail_reading_sessions']}")
-            report_lines.append(f"Sessions with no code (no-label/code): {metrics['no_code_count']}")
-            report_lines.append(f"Sessions with read failure (with label but no-read): {metrics['read_failure_count']}")
-            report_lines.append(f"Sessions with unreadable code: {metrics['unreadable_count']}")
-            report_lines.append(f"Sessions False NoRead: {metrics['sessions_false_noread']}")
-            report_lines.append(f"Total number of readable sessions w/o OCR: {metrics['total_readable_without_ocr']}")
+            report_lines.append("-" * 16)
+            
+            # Calculate fail reading parcels (NOREAD minus missed triggers)
+            fail_reading_parcels = total_noread - results['false_triggers']
+            if fail_reading_parcels < 0:
+                fail_reading_parcels = 0
+                
+            report_lines.append(f"Number of Failed sessions: {fail_reading_parcels}")
+            report_lines.append(f"Number of No-Code sessions: {analysis_data['no_code_count']}")
+            report_lines.append(f"Number of Read-Failure sessions: {analysis_data['read_failure_count']}")
+            
+            # Calculate total unreadable using same formula as Analysis tab
+            # Use consistent formula: total_sessions - sessions_no_code - sessions_read_failure
+            total_unreadable = len(self.calculate_session_labels()) - analysis_data['no_code_count'] - analysis_data['read_failure_count']
+            if total_unreadable < 0:
+                total_unreadable = 0
+                
+            report_lines.append(f"Number of Unreadable sessions: {total_unreadable}")
+
+            # OCR recovery breakdowns
+            session_labels_dict = self.calculate_session_labels()
+            session_ocr_readable_dict = self.calculate_session_ocr_readable_status()
+            ocr_recovered_in_read_failure = sum(
+                1 for session_id, is_ocr in session_ocr_readable_dict.items()
+                if is_ocr and session_labels_dict.get(session_id) == "read failure"
+            )
+            ocr_recovered_in_unreadable = sum(
+                1 for session_id, is_ocr in session_ocr_readable_dict.items()
+                if is_ocr and session_labels_dict.get(session_id) == "unreadable"
+            )
+            # Correct calculation: non read failure = read failure + unreadable
+            ocr_recovered_non_failure = ocr_recovered_in_read_failure + ocr_recovered_in_unreadable
+            report_lines.append(f"Number of OCR recovered (non read failure) sessions: {ocr_recovered_non_failure}")
+            report_lines.append(f"Sub-Number of OCR recovered in 'read failure' sessions: {ocr_recovered_in_read_failure}")
+            report_lines.append(f"Sub-Number of OCR recovered in 'unreadable' sessions: {ocr_recovered_in_unreadable}")
+            
+            # Add False NoRead sessions count from Analysis tab
+            sessions_false_noread = self.calculate_sessions_with_false_noread()
+            report_lines.append(f"Number of False NoRead sessions: {sessions_false_noread}")
+            
 
             report_lines.append("")
-
-            report_lines.append("OCR ANALYSIS")
-            report_lines.append("=" * len("OCR ANALYSIS"))
-            report_lines.append(f"Sessions with read failure recovered with OCR: {metrics['ocr_recovered_read_failure']}")
-            report_lines.append(f"Sessions with unreadable code recovered with OCR: {metrics['ocr_recovered_unreadable']}")
-            report_lines.append(f"Total session OCR recovered: {metrics['ocr_recovered_total']}")
-
-            report_lines.append("")
-
-            report_lines.append("READ RATE")
-            report_lines.append("=" * len("READ RATE"))
-            report_lines.append(f"Decoder Net Read Rate (excluding OCR): {metrics['decoder_net_rate_text']}")
-            report_lines.append(f"System Gross Read Rate: {metrics['system_gross_read_rate_text']}")
-            report_lines.append(f"System Net Read Rate (excluding OCR): {metrics['system_net_rate_excl_text']}")
-            report_lines.append(
-                "System Net Read Rate (including read failure recovered by OCR): "
-                f"{metrics['system_net_rate_incl_read_failure_ocr_text']}"
-            )
-            report_lines.append(
-                "System Net Read Rate (including all recovered by OCR): "
-                f"{metrics['system_net_rate_incl_all_ocr_text']}"
-            )
-            report_lines.append(
-                "System read failure improvement thanks to OCR: "
-                f"{metrics['system_read_failure_improvement_text']}"
-            )
+            # READ RATE section
+            report_lines.append("=== READ RATE ===")
+            
+            # Calculate rates
+            gross_rate = self.calculate_gross_rate(results, analysis_data)
+            net_reading_performance = self.calculate_net_reading_performance(results, analysis_data)
+            
+            report_lines.append(f"Gross read performance: {gross_rate:.1f}%")
+            report_lines.append(f"Net read performance (excl. OCR): {net_reading_performance['excl_ocr']:.2f}%")
+            report_lines.append(f"Net read performance (incl. OCR): {net_reading_performance['incl_ocr']:.2f}%")
+            
+            # Add OCR improvement percentage
+            if net_reading_performance['excl_ocr'] >= 0 and net_reading_performance['incl_ocr'] >= 0:
+                # Get analysis data to calculate actual read numbers
+                total_entered = analysis_data.get('total_entered', 0)
+                actual_sessions = analysis_data.get('actual_sessions', 0)
+                sessions_read_failure = analysis_data.get('read_failure_count', 0)
+                sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
+                sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
+                
+                # Calculate readable sessions and read images
+                total_readable_excl_ocr = total_entered - actual_sessions + sessions_read_failure
+                total_readable_incl_ocr = total_readable_excl_ocr + sessions_ocr_readable_non_failure
+                
+                read_images_excl_ocr = total_readable_excl_ocr - sessions_read_failure
+                read_images_incl_ocr = read_images_excl_ocr + sessions_ocr_readable
+                
+                if read_images_excl_ocr > 0:
+                    # Formula: [(Read w/ OCR - Read w/o OCR) / Read w/o OCR] × 100
+                    ocr_improvement = ((read_images_incl_ocr - read_images_excl_ocr) / read_images_excl_ocr) * 100
+                    report_lines.append(f"OCR read rate improvement: +{ocr_improvement:.2f}%")
+                else:
+                    report_lines.append("OCR read rate improvement: N/A (no baseline reads)")
             
             report_lines.append("")
             report_lines.append("=" * 50)
@@ -3017,50 +2865,6 @@ class ImageLabelTool:
             # Special filter for False NoRead images
             self.image_paths = [path for path in self.all_image_paths
                                if self.false_noread.get(path, False)]
-        elif filter_value == "Session #":
-            session_input = self.session_filter_var.get().strip() if hasattr(self, 'session_filter_var') else ""
-            if not session_input:
-                # No value entered; treat as no results rather than falling back to all images
-                self.image_paths = []
-            else:
-                # Validate that the input only contains digits or underscores
-                if any(ch not in "0123456789_" for ch in session_input):
-                    self.image_paths = []
-                else:
-                    def normalize_numeric(text):
-                        """Return numeric strings without leading zeros for consistent comparison."""
-                        if text.isdigit():
-                            # Preserve "0" specifically, but drop other leading zeros
-                            return str(int(text))
-                        return text
-
-                    def split_session_parts(value):
-                        """Split a session identifier into (base, suffix) parts with normalized base."""
-                        if '_' in value:
-                            base, suffix = value.split('_', 1)
-                        else:
-                            base, suffix = value, ""
-                        return normalize_numeric(base), suffix
-
-                    input_base, input_suffix = split_session_parts(session_input)
-
-                    matching_paths = []
-                    for path in self.all_image_paths:
-                        session_id = self.get_session_number(path)
-                        if not session_id:
-                            continue
-
-                        session_base, session_suffix = split_session_parts(session_id)
-
-                        base_matches = session_base == input_base
-                        if '_' in session_input:
-                            if base_matches and session_suffix == input_suffix:
-                                matching_paths.append(path)
-                        else:
-                            if base_matches:
-                                matching_paths.append(path)
-
-                    self.image_paths = matching_paths
         else:
             # Map filter names to label values
             filter_map = {
@@ -3440,6 +3244,10 @@ class ImageLabelTool:
         
         return stats
 
+    def update_chart_tabs(self):
+        """REMOVED: Charts functionality disabled"""
+        pass
+
     def show_statistics_charts(self):
         """Display fancy histogram and pie charts for statistics visualization"""
         # DISABLED: This method is now replaced by integrated chart tabs
@@ -3500,14 +3308,9 @@ class ImageLabelTool:
                     canvas_widget = self.histogram_canvas.get_tk_widget()
                     if canvas_widget.winfo_exists():
                         # Get new dimensions for histogram
-                        scrollable_frame = getattr(self, 'charts_scrollable_frame', None)
-                        if scrollable_frame is not None:
-                            scrollable_frame.update_idletasks()
-                            frame_width = scrollable_frame.winfo_width()
-                            frame_height = scrollable_frame.winfo_height()
-                        else:
-                            frame_width = 800  # Default width
-                            frame_height = 600  # Default height
+                        self.charts_scrollable_frame.update_idletasks()
+                        frame_width = self.charts_scrollable_frame.winfo_width()
+                        frame_height = self.charts_scrollable_frame.winfo_height()
                         
                         if frame_width > 1 and frame_height > 1:
                             fig_width = max(4, (frame_width - 80) / 100)
@@ -3537,14 +3340,9 @@ class ImageLabelTool:
                     canvas_widget = self.pie_canvas.get_tk_widget()
                     if canvas_widget.winfo_exists():
                         # Get new dimensions for pie chart
-                        scrollable_frame = getattr(self, 'parcel_charts_scrollable_frame', None)
-                        if scrollable_frame is not None:
-                            scrollable_frame.update_idletasks()
-                            frame_width = scrollable_frame.winfo_width()
-                            frame_height = scrollable_frame.winfo_height()
-                        else:
-                            frame_width = 800  # Default width
-                            frame_height = 600  # Default height
+                        self.parcel_charts_scrollable_frame.update_idletasks()
+                        frame_width = self.parcel_charts_scrollable_frame.winfo_width()
+                        frame_height = self.parcel_charts_scrollable_frame.winfo_height()
                         
                         if frame_width > 1 and frame_height > 1:
                             fig_width = max(4, (frame_width - 80) / 100)
@@ -3589,9 +3387,6 @@ class ImageLabelTool:
 
     def _clear_chart_references(self):
         """Clear all chart references and close matplotlib figures"""
-        if plt is None:
-            return
-            
         try:
             if hasattr(self, 'histogram_figure') and self.histogram_figure:
                 print(f"Closing histogram figure: {self.histogram_figure}")
@@ -3625,19 +3420,8 @@ class ImageLabelTool:
             # If charts don't exist, create them
             self.update_chart_tabs()
 
-    def update_chart_tabs(self):
-        """Update chart tabs - simplified stub"""
-        pass
-
     def create_image_histogram(self, parent_frame):
         """Create a fancy histogram showing image classification distribution"""
-        if plt is None:
-            # Create a label showing matplotlib is not available
-            error_label = tk.Label(parent_frame, text="Matplotlib not available\nCharts cannot be displayed",
-                                 bg="#FAFAFA", fg="red", font=("Arial", 12))
-            error_label.pack(expand=True, fill="both", padx=20, pady=20)
-            return None, None
-            
         # Set up matplotlib style
         try:
             plt.style.use('seaborn-v0_8-darkgrid')
@@ -3746,12 +3530,9 @@ class ImageLabelTool:
         parent_frame.update()
         
         # Embed the plot in tkinter and store references
-        if FigureCanvasTkAgg is not None:
-            canvas = FigureCanvasTkAgg(fig, master=parent_frame)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        else:
-            canvas = None
+        canvas = FigureCanvasTkAgg(fig, master=parent_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         
         # Store references for dynamic resizing
         self.histogram_figure = fig
@@ -3760,13 +3541,6 @@ class ImageLabelTool:
 
     def create_parcel_pie_chart(self, parent_frame):
         """Create a fancy pie chart showing parcel classification distribution"""
-        if plt is None:
-            # Create a label showing matplotlib is not available
-            error_label = tk.Label(parent_frame, text="Matplotlib not available\nCharts cannot be displayed",
-                                 bg="#FAFAFA", fg="red", font=("Arial", 12))
-            error_label.pack(expand=True, fill="both", padx=20, pady=20)
-            return None, None
-            
         # Set up matplotlib style
         try:
             plt.style.use('seaborn-v0_8-whitegrid')
@@ -3911,12 +3685,9 @@ class ImageLabelTool:
         parent_frame.update()
         
         # Embed the plot in tkinter and store references
-        if FigureCanvasTkAgg is not None:
-            canvas = FigureCanvasTkAgg(fig, master=parent_frame)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        else:
-            canvas = None
+        canvas = FigureCanvasTkAgg(fig, master=parent_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         
         # Store references for dynamic resizing
         self.pie_figure = fig
@@ -3925,13 +3696,6 @@ class ImageLabelTool:
 
     def create_progress_overview(self, parent_frame):
         """Create a comprehensive progress overview with multiple visualizations"""
-        if plt is None:
-            # Create a label showing matplotlib is not available
-            error_label = tk.Label(parent_frame, text="Matplotlib not available\nCharts cannot be displayed",
-                                 bg="#FAFAFA", fg="red", font=("Arial", 12))
-            error_label.pack(expand=True, fill="both", padx=20, pady=20)
-            return None, None
-            
         # Set up the figure with subplots
         fig = plt.figure(figsize=(12, 8))
         
@@ -3951,17 +3715,10 @@ class ImageLabelTool:
             progress_labels = [f'Classified\n({classified_images})', f'Unclassified\n({unclassified_images})']
             progress_colors = ['#4CAF50', '#FF5722']
             
-            pie_result = ax1.pie(progress_sizes, labels=progress_labels, 
-                                colors=progress_colors, autopct='%1.1f%%',
-                                startangle=90, explode=[0.05, 0.05],
-                                shadow=True)
-            
-            # Unpack pie chart results (can be 2 or 3 elements)
-            if len(pie_result) == 3:
-                wedges, texts, autotexts = pie_result
-            else:
-                wedges, texts = pie_result
-                autotexts = []
+            wedges, texts, autotexts = ax1.pie(progress_sizes, labels=progress_labels, 
+                                              colors=progress_colors, autopct='%1.1f%%',
+                                              startangle=90, explode=[0.05, 0.05],
+                                              shadow=True)
             
             for autotext in autotexts:
                 autotext.set_color('white')
@@ -4056,12 +3813,9 @@ class ImageLabelTool:
         plt.tight_layout()
         
         # Embed the plot in tkinter
-        if FigureCanvasTkAgg is not None:
-            canvas = FigureCanvasTkAgg(fig, master=parent_frame)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-        else:
-            canvas = None
+        canvas = FigureCanvasTkAgg(fig, master=parent_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def update_counts(self):
         counts = {label: 0 for label in LABELS}
@@ -4215,7 +3969,7 @@ class ImageLabelTool:
                 continue
             
             # Use centralized session classification logic
-            session_classification = self.determine_session_classification(classified_labels, session_image_paths=session_paths)
+            session_classification = self.determine_session_classification(classified_labels)
             session_labels_dict[session_id] = session_classification
                 
         return session_labels_dict
@@ -4245,7 +3999,7 @@ class ImageLabelTool:
         return ocr_readable_sessions
 
     def calculate_sessions_with_false_noread(self):
-        """Count sessions where every image is explicitly marked as False NoRead."""
+        """Calculate number of sessions that have at least one False NoRead image"""
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             return 0
         
@@ -4258,47 +4012,15 @@ class ImageLabelTool:
                     sessions[session_id] = []
                 sessions[session_id].append(path)
         
-        # Count sessions only when every image in the session is flagged False NoRead
+        # Count sessions with at least one False NoRead image
         false_noread_sessions = 0
         for session_id, session_paths in sessions.items():
-            if not session_paths:
-                continue
-
-            # All images must explicitly be marked False NoRead
-            all_marked_false = all(self.false_noread.get(path, False) for path in session_paths)
-            if all_marked_false:
-                false_noread_sessions += 1
-
+            for path in session_paths:
+                if self.false_noread.get(path, False):
+                    false_noread_sessions += 1
+                    break  # Found one False NoRead image in this session, move to next session
+        
         return false_noread_sessions
-
-    def calculate_session_category_counts(self, session_labels_dict=None):
-        """Return consistent session category totals for analysis and log displays."""
-        if session_labels_dict is None:
-            session_labels_dict = self.calculate_session_labels()
-
-        counts = {
-            'total_sessions': len(session_labels_dict),
-            'sessions_no_code': 0,
-            'sessions_read_failure': 0,
-            'sessions_unreadable': 0,
-            'sessions_false_noread': 0,
-            'sessions_unlabeled': 0
-        }
-
-        for label in session_labels_dict.values():
-            if label == "no label":
-                counts['sessions_no_code'] += 1
-            elif label == "read failure":
-                counts['sessions_read_failure'] += 1
-            elif label == "unreadable":
-                counts['sessions_unreadable'] += 1
-            elif label == "FalseNoRead":
-                counts['sessions_false_noread'] += 1
-            elif label == "unlabeled":
-                counts['sessions_unlabeled'] += 1
-
-        counts['adjusted_failed_sessions'] = max(counts['total_sessions'] - counts['sessions_false_noread'], 0)
-        return counts
 
     def calculate_net_rates_centralized(self, total_entered, actual_sessions, sessions_read_failure, sessions_false_noread, sessions_ocr_readable, sessions_ocr_readable_non_failure):
         """Centralized calculation for net read rates and related metrics"""
@@ -4377,18 +4099,27 @@ class ImageLabelTool:
             return
 
         session_labels_dict = self.calculate_session_labels()
-        session_counts = self.calculate_session_category_counts(session_labels_dict)
-
+        
         # Count sessions by different categories
-        total_sessions = session_counts['total_sessions']
-        sessions_no_code = session_counts['sessions_no_code']
-        sessions_read_failure = session_counts['sessions_read_failure']
-        sessions_unreadable_code = session_counts['sessions_unreadable']
-        sessions_false_noread = session_counts['sessions_false_noread']
-        sessions_unlabeled = session_counts['sessions_unlabeled']
-
+        total_sessions = len(session_labels_dict)
+        sessions_no_code = 0
+        sessions_read_failure = 0
+        sessions_ocr_readable = 0
+        
+        for session_label in session_labels_dict.values():
+            if session_label == "no label":
+                sessions_no_code += 1
+            elif session_label == "read failure":
+                sessions_read_failure += 1
+        
         # Calculate sessions with OCR readable images (separate from primary classification)
         sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
+        
+        # Calculate sessions with False NoRead images
+        sessions_false_noread = self.calculate_sessions_with_false_noread()
+        
+        # Calculate sessions with unreadable code (excluding no_code and read_failure)
+        sessions_unreadable_code = total_sessions - sessions_no_code - sessions_read_failure
         
         # Calculate total readable sessions using expected total from text field
         try:
@@ -4404,21 +4135,13 @@ class ImageLabelTool:
             total_readable_excl_ocr = "N/A (Enter expected total)"
             total_readable_incl_ocr = "N/A (Enter expected total)"
         
-        # Integrity check: all categorized sessions should equal total sessions
-        integrity_sum = (
-            sessions_no_code
-            + sessions_read_failure
-            + sessions_unreadable_code
-            + sessions_false_noread
-            + sessions_unlabeled
-        )
+        # Integrity check: sessions_no_code + sessions_read_failure + sessions_unreadable_code == total_sessions
+        integrity_sum = sessions_no_code + sessions_read_failure + sessions_unreadable_code
         integrity_ok = (integrity_sum == total_sessions)
-
-        adjusted_failed_sessions = session_counts['adjusted_failed_sessions']
 
         # Format the display
         lines = [
-            f"Number of failed sessions (excl. False NoRead): {adjusted_failed_sessions}",
+            f"Number of failed sessions: {total_sessions}",
             f"Sessions with no label: {sessions_no_code}",
             f"Sessions with read failure: {sessions_read_failure}",
             f"Sessions with unreadable code: {sessions_unreadable_code}",
@@ -4426,15 +4149,7 @@ class ImageLabelTool:
             f"Sessions False NoRead: {sessions_false_noread}",
             f"Total readable sessions (excl. OCR): {total_readable_excl_ocr}",
             f"Total readable sessions (incl. OCR): {total_readable_incl_ocr}",
-            (
-                "Integrity check (raw): "
-                f"{sessions_no_code} (no label) + "
-                f"{sessions_read_failure} (read failure) + "
-                f"{sessions_unreadable_code} (unreadable) + "
-                f"{sessions_false_noread} (False NoRead) + "
-                f"{sessions_unlabeled} (unlabeled) = {integrity_sum}"
-                + (" (OK)" if integrity_ok else f" (❌ MISMATCH: should be {total_sessions})")
-            )
+            f"Integrity check: {sessions_no_code} + {sessions_read_failure} + {sessions_unreadable_code} = {integrity_sum}" + (" (OK)" if integrity_ok else f" (❌ MISMATCH: should be {total_sessions})")
         ]
         self.session_count_var.set("\n".join(lines))
 
@@ -4452,15 +4167,21 @@ class ImageLabelTool:
 
         # Get current session statistics
         session_labels_dict = self.calculate_session_labels()
-        session_counts = self.calculate_session_category_counts(session_labels_dict)
-        actual_sessions = session_counts['total_sessions']
-        sessions_no_code = session_counts['sessions_no_code']
-        sessions_read_failure = session_counts['sessions_read_failure']
+        actual_sessions = len(session_labels_dict)
+        
+        sessions_no_code = 0
+        sessions_read_failure = 0
+        
+        for session_label in session_labels_dict.values():
+            if session_label == "no label":
+                sessions_no_code += 1
+            elif session_label == "read failure":
+                sessions_read_failure += 1
         
         # Calculate OCR readable sessions and False NoRead sessions
         sessions_ocr_readable = self.calculate_sessions_with_ocr_readable()
         sessions_ocr_readable_non_failure = self.calculate_ocr_readable_non_failure_sessions()
-        sessions_false_noread = session_counts['sessions_false_noread']
+        sessions_false_noread = self.calculate_sessions_with_false_noread()
         
         # Use centralized calculation
         net_rates = self.calculate_net_rates_centralized(
@@ -4541,6 +4262,42 @@ class ImageLabelTool:
             if hasattr(self, 'image_paths') and self.image_paths:
                 # Use after_idle to ensure the window has finished resizing
                 self.root.after_idle(self.show_image)
+
+    def _delayed_chart_update(self):
+        """REMOVED: Charts functionality disabled"""
+        pass
+
+    def update_chart_tabs(self):
+        """REMOVED: Charts functionality disabled"""
+        pass
+
+    def _resize_existing_charts(self):
+        """REMOVED: Charts functionality disabled"""
+        pass
+
+    def _get_chart_data_hash(self):
+        """REMOVED: Charts functionality disabled"""
+        return None
+
+    def _clear_chart_references(self):
+        """REMOVED: Charts functionality disabled"""
+        pass
+
+    def force_chart_resize(self):
+        """REMOVED: Charts functionality disabled"""
+        pass
+
+    def create_image_histogram(self, parent_frame):
+        """REMOVED: Charts functionality disabled"""
+        label = tk.Label(parent_frame, text="📊 Charts have been disabled\nfor better stability",
+                       font=("Arial", 14), bg="#FAFAFA", fg="#666666")
+        label.pack(expand=True)
+
+    def create_parcel_pie_chart(self, parent_frame):
+        """REMOVED: Charts functionality disabled"""
+        label = tk.Label(parent_frame, text="📊 Charts have been disabled\nfor better stability",
+                       font=("Arial", 14), bg="#FAFAFA", fg="#666666")
+        label.pack(expand=True)
 
     def apply_histogram_equalization(self, img):
         """Apply histogram equalization to enhance image contrast"""
@@ -4625,7 +4382,7 @@ class ImageLabelTool:
             # Start zoom from current fitted scale and increment it
             current_scale = getattr(self, 'current_scale_factor', 1.0)
             self.zoom_level = min(current_scale * 1.25, 5.0)  # Increment from current scale
-        self.show_image()  # No text blink for zoom operations
+        self.show_image()
 
     def zoom_out(self):
         """Decrease zoom level"""
@@ -4639,7 +4396,7 @@ class ImageLabelTool:
             # Start zoom from current fitted scale and decrement it
             current_scale = getattr(self, 'current_scale_factor', 1.0)
             self.zoom_level = max(current_scale / 1.25, 0.1)  # Decrement from current scale
-        self.show_image()  # No text blink for zoom operations
+        self.show_image()
 
     def mouse_wheel_zoom(self, event):
         """Handle mouse wheel zoom"""
@@ -4648,321 +4405,6 @@ class ImageLabelTool:
             self.zoom_in()
         else:
             self.zoom_out()
-
-    def double_click_zoom_in(self, event):
-        """Handle double-click zoom in (x2) centered at click location"""
-        print(f"🖱️  DOUBLE CLICK ZOOM IN at ({event.x}, {event.y})")
-        self._perform_centered_zoom(event, 2.0)
-        return "break"
-        
-    def _perform_centered_zoom(self, event, zoom_factor):
-        """Perform zoom operation centered at the specified coordinates"""
-        if not self.image_paths:
-            return
-            
-        # Get click coordinates in canvas viewport
-        click_canvas_x = event.x
-        click_canvas_y = event.y
-        
-        # Debug: uncomment for troubleshooting
-        # print(f"🔍 ZOOM: Click ({click_canvas_x}, {click_canvas_y}), factor {zoom_factor}")
-        # print(f"🔍 ZOOM: Current mode {'1:1' if self.scale_1to1 else 'fitted'}, zoom {getattr(self, 'zoom_level', 'undefined')}")
-        
-        # Convert to absolute image coordinates (accounting for current scroll position and padding)
-        if self.scale_1to1:
-            # Step 1: Convert click to scroll region coordinates (includes current scroll offset)
-            canvas_x = self.canvas.canvasx(click_canvas_x)
-            canvas_y = self.canvas.canvasy(click_canvas_y)
-            
-            # Step 2: Get padding (where the image starts in the scroll region)
-            padding_x = getattr(self, 'image_padding_x', 0)
-            padding_y = getattr(self, 'image_padding_y', 0)
-            
-            # Step 3: Convert from scroll region to image coordinates (subtract padding offset)
-            image_canvas_x = canvas_x - padding_x
-            image_canvas_y = canvas_y - padding_y
-            
-            # Step 4: Convert from scaled image coordinates to original image coordinates
-            abs_x = image_canvas_x / self.zoom_level
-            abs_y = image_canvas_y / self.zoom_level
-            
-            # Debug: uncomment for troubleshooting
-            # current_xview = self.canvas.xview()
-            # current_yview = self.canvas.yview()
-            # print(f"🔍 ZOOM DEBUG: Click at canvas ({click_canvas_x}, {click_canvas_y})")
-            # print(f"🔍 ZOOM DEBUG: Current scroll view x{current_xview}, y{current_yview}")
-            # print(f"🔍 ZOOM DEBUG: Canvas coords ({canvas_x:.1f}, {canvas_y:.1f})")
-            # print(f"🔍 ZOOM DEBUG: Padding ({padding_x}, {padding_y})")
-            # print(f"🔍 ZOOM DEBUG: Image canvas coords ({image_canvas_x:.1f}, {image_canvas_y:.1f})")
-            # print(f"🔍 ZOOM DEBUG: Original image coords ({abs_x:.1f}, {abs_y:.1f})")
-            # print(f"🔍 ZOOM DEBUG: Current zoom {self.zoom_level:.3f} -> new zoom {zoom_factor:.3f}")
-            
-            # Validate the coordinate conversion
-            if abs_x < 0 or abs_y < 0:
-                # Clamp coordinates to valid image area if click is in padding
-                path = self.image_paths[self.current_index]
-                img = Image.open(path)
-                orig_width, orig_height = img.size
-                abs_x = max(0, min(abs_x, orig_width))
-                abs_y = max(0, min(abs_y, orig_height))
-        else:
-            # In fitted mode: need to account for centering offset and current scale
-            path = self.image_paths[self.current_index]
-            img = Image.open(path)
-            
-            # Apply the same processing that will be used for display
-            if hasattr(self, 'histogram_eq_enabled') and self.histogram_eq_enabled.get():
-                img = self.apply_histogram_equalization(img)
-                
-            original_width, original_height = img.size
-            # Debug: uncomment for troubleshooting
-            # print(f"🔍 FITTED DEBUG: Using processed image size ({original_width}x{original_height})")
-            
-            canvas_width = self.canvas.winfo_width()
-            canvas_height = self.canvas.winfo_height()
-            
-            # Calculate current fitted scale and display size
-            scale_x = canvas_width / original_width
-            scale_y = canvas_height / original_height
-            fitted_scale = min(scale_x, scale_y)
-            
-            display_width = int(original_width * fitted_scale)
-            display_height = int(original_height * fitted_scale)
-            
-            # Calculate centering offsets
-            offset_x = (canvas_width - display_width) // 2
-            offset_y = (canvas_height - display_height) // 2
-            
-            # Debug: uncomment for troubleshooting
-            # print(f"🔍 FITTED DEBUG: Canvas ({canvas_width}x{canvas_height})")
-            # print(f"🔍 FITTED DEBUG: Original image ({original_width}x{original_height})")
-            # print(f"🔍 FITTED DEBUG: Fitted scale {fitted_scale:.3f}")
-            # print(f"🔍 FITTED DEBUG: Display size ({display_width}x{display_height})")
-            # print(f"🔍 FITTED DEBUG: Offset ({offset_x}, {offset_y})")
-            # print(f"🔍 FITTED DEBUG: Click area: x[{offset_x}-{offset_x + display_width}], y[{offset_y}-{offset_y + display_height}]")
-            
-            # Convert click to original image coordinates
-            if (click_canvas_x >= offset_x and click_canvas_x <= offset_x + display_width and 
-                click_canvas_y >= offset_y and click_canvas_y <= offset_y + display_height):
-                abs_x = (click_canvas_x - offset_x) / fitted_scale
-                abs_y = (click_canvas_y - offset_y) / fitted_scale
-                # Debug: uncomment for troubleshooting
-            # print(f"🔍 FITTED DEBUG: Click inside image -> ({abs_x:.1f}, {abs_y:.1f})")
-            else:
-                # Click outside image, use center
-                abs_x = original_width / 2
-                abs_y = original_height / 2
-                # Debug: uncomment for troubleshooting
-                # print(f"🔍 FITTED DEBUG: Click outside image -> using center ({abs_x:.1f}, {abs_y:.1f})")
-            
-            # Validate coordinates are within image bounds
-            abs_x = max(0, min(abs_x, original_width))
-            abs_y = max(0, min(abs_y, original_height))
-            # Debug: uncomment for troubleshooting
-            # print(f"🔍 FITTED DEBUG: Final validated coords ({abs_x:.1f}, {abs_y:.1f})")
-        
-        # Apply zoom
-        if self.scale_1to1:
-            # Already in 1:1 mode, apply zoom factor
-            if zoom_factor > 1:
-                new_zoom = min(self.zoom_level * zoom_factor, 5.0)
-            else:
-                new_zoom = max(self.zoom_level * zoom_factor, 0.1)
-            self.zoom_level = new_zoom
-        else:
-            # Switch to 1:1 mode and apply zoom from current scale
-            self.scale_1to1 = True
-            self.btn_1to1.config(text="Fit to Window", bg="#A5D6A7")
-            current_scale = getattr(self, 'current_scale_factor', 1.0)
-            if zoom_factor > 1:
-                new_zoom = min(current_scale * zoom_factor, 5.0)
-            else:
-                new_zoom = max(current_scale * zoom_factor, 0.1)
-            self.zoom_level = new_zoom
-        
-        # Redisplay image with new zoom
-        self.show_image()  # No text blink for zoom operations
-        
-        # Center the clicked point in viewport after the image is redrawn
-        # Use multiple delays to ensure proper timing
-        print(f"🔍 ZOOM: Will center at original image coords ({abs_x:.1f}, {abs_y:.1f}) after redraw")
-        
-        def delayed_center():
-            # Ensure canvas is updated first
-            self.canvas.update_idletasks()
-            self._center_image_point(abs_x, abs_y)
-        
-        # Allow more time for the image to be fully displayed before centering
-        self.root.after(50, delayed_center)
-    
-    def _center_image_point(self, image_x, image_y):
-        """Center a point from the original image coordinates in the middle of the canvas"""
-        if not self.scale_1to1:
-            return
-        
-        # Validate input coordinates
-        if not self.image_paths:
-            return
-            
-        # Get the actual current image dimensions to validate coordinates
-        path = self.image_paths[self.current_index]
-        img = Image.open(path)
-        if hasattr(self, 'histogram_eq_enabled') and self.histogram_eq_enabled.get():
-            img = self.apply_histogram_equalization(img)
-        orig_width, orig_height = img.size
-        
-        # Clamp coordinates to valid range
-        image_x = max(0, min(image_x, orig_width))
-        image_y = max(0, min(image_y, orig_height))
-        
-        # Get canvas dimensions
-        canvas_width = self.canvas.winfo_width()
-        canvas_height = self.canvas.winfo_height()
-        
-        # Calculate where this point is now in the scaled/zoomed image (in canvas coordinates)
-        # Add padding to convert from image coordinates to scroll region coordinates
-        padding_x = getattr(self, 'image_padding_x', 0)
-        padding_y = getattr(self, 'image_padding_y', 0)
-        scaled_point_x = image_x * self.zoom_level + padding_x
-        scaled_point_y = image_y * self.zoom_level + padding_y
-        
-        # We want to center this point in the middle of the canvas viewport
-        # So the point should appear at canvas_width/2, canvas_height/2
-        center_x = canvas_width / 2
-        center_y = canvas_height / 2
-        
-        # Calculate the scroll offset needed to achieve this
-        # If the point is at scaled_point_x in the image, and we want it at center_x in the viewport,
-        # then the left edge of the viewport should be at: scaled_point_x - center_x
-        target_left = scaled_point_x - center_x
-        target_top = scaled_point_y - center_y
-        
-        # Get scroll region dimensions and verify they match expectations
-        scroll_region = self.canvas.cget("scrollregion")
-        if scroll_region:
-            parts = scroll_region.split()
-            if len(parts) == 4:
-                region_width = float(parts[2])
-                region_height = float(parts[3])
-                
-                # Verify scroll region matches what was set during display
-                expected_width = getattr(self, '_expected_scroll_width', region_width)
-                expected_height = getattr(self, '_expected_scroll_height', region_height)
-                
-                if abs(region_width - expected_width) > 1 or abs(region_height - expected_height) > 1:
-                    print(f"⚠️  REGION MISMATCH: Expected {expected_width:.0f}x{expected_height:.0f}, Got {region_width:.0f}x{region_height:.0f}")
-                    # Use the actual current scroll region
-                    pass
-                
-                # Calculate maximum scrollable distance
-                max_scroll_x = max(0, region_width - canvas_width)
-                max_scroll_y = max(0, region_height - canvas_height)
-                
-                # Calculate the desired scroll position to center the point
-                target_left = scaled_point_x - center_x
-                target_top = scaled_point_y - center_y
-                
-                # Clamp to valid scroll range (work in pixel coordinates)
-                target_left = max(0, min(target_left, max_scroll_x))
-                target_top = max(0, min(target_top, max_scroll_y))
-                
-                # Convert to scroll fractions relative to full scroll region size
-                max_x_frac = 0.0
-                if region_width > 0:
-                    scroll_x_frac = max(0.0, min(1.0, target_left / region_width))
-                    max_x_frac = max(0.0, min(1.0 - (canvas_width / region_width), 1.0))
-                    scroll_x_frac = min(scroll_x_frac, max_x_frac)
-                else:
-                    scroll_x_frac = 0.0
-                    
-                max_y_frac = 0.0
-                if region_height > 0:
-                    scroll_y_frac = max(0.0, min(1.0, target_top / region_height))
-                    max_y_frac = max(0.0, min(1.0 - (canvas_height / region_height), 1.0))
-                    scroll_y_frac = min(scroll_y_frac, max_y_frac)
-                else:
-                    scroll_y_frac = 0.0
-                
-                # Validation: ensure we have reasonable values
-                if scroll_x_frac < 0 or scroll_x_frac > 1 or scroll_y_frac < 0 or scroll_y_frac > 1:
-                    print(f"⚠️  WARNING: Invalid scroll fractions ({scroll_x_frac:.3f}, {scroll_y_frac:.3f})")
-                    return
-                
-                # Debug info for centering analysis
-                print(f"🎯 CENTER: Point ({image_x:.1f}, {image_y:.1f}) at {self.zoom_level:.3f}x zoom")
-                print(f"🎯 CENTER: Canvas ({canvas_width}x{canvas_height}), Region ({region_width:.0f}x{region_height:.0f})")
-                print(f"🎯 CENTER: Max scroll X={max_scroll_x:.0f}, Y={max_scroll_y:.0f}")
-                print(f"🎯 CENTER: Scaled to ({scaled_point_x:.1f}, {scaled_point_y:.1f}) with padding ({padding_x}, {padding_y})")
-                print(f"🎯 CENTER: Target scroll ({target_left:.1f}, {target_top:.1f}) → fractions ({scroll_x_frac:.3f}, {scroll_y_frac:.3f})")
-                
-                # Get current scroll position for debugging
-                old_x_view = self.canvas.xview()
-                old_y_view = self.canvas.yview()
-                
-                # Apply the scroll position to center the clicked point
-                # Use a more robust scrolling approach
-                try:
-                    # Method 1: Use moveto with fractions
-                    self.canvas.xview_moveto(scroll_x_frac)
-                    self.canvas.yview_moveto(scroll_y_frac)
-                    
-                    # Force update
-                    self.canvas.update_idletasks()
-                    
-                    # Verify the result
-                    new_x_view = self.canvas.xview()
-                    new_y_view = self.canvas.yview()
-                    
-                    actual_x_frac = new_x_view[0] if len(new_x_view) > 1 else 0
-                    actual_y_frac = new_y_view[0] if len(new_y_view) > 1 else 0
-                    
-                    print(f"🔄 SCROLL: Requested ({scroll_x_frac:.3f}, {scroll_y_frac:.3f}) → Got ({actual_x_frac:.3f}, {actual_y_frac:.3f})")
-                    
-                    # If the scroll didn't work well, try alternative approach
-                    desired_x_frac = scroll_x_frac
-                    desired_y_frac = scroll_y_frac
-                    # Convert fractions back to pixel offsets for accuracy comparisons
-                    actual_left = actual_x_frac * region_width
-                    actual_top = actual_y_frac * region_height
-                    desired_left = desired_x_frac * region_width
-                    desired_top = desired_y_frac * region_height
-                    delta_left = desired_left - actual_left
-                    delta_top = desired_top - actual_top
-
-                    # If we're still off by more than a few pixels, iteratively refine the scroll position
-                    if abs(delta_left) > 2 or abs(delta_top) > 2:
-                        for _ in range(3):
-                            if abs(delta_left) > 2 and region_width > 0:
-                                adjust_frac_x = max(-1.0, min(1.0, delta_left / region_width))
-                                desired_x_frac = max(0.0, min(max_x_frac, actual_x_frac + adjust_frac_x))
-                                self.canvas.xview_moveto(desired_x_frac)
-                                self.canvas.update_idletasks()
-                                new_x_view = self.canvas.xview()
-                                actual_x_frac = new_x_view[0] if len(new_x_view) > 1 else desired_x_frac
-                                actual_left = actual_x_frac * region_width
-                                delta_left = desired_left - actual_left
-                            if abs(delta_top) > 2 and region_height > 0:
-                                adjust_frac_y = max(-1.0, min(1.0, delta_top / region_height))
-                                desired_y_frac = max(0.0, min(max_y_frac, actual_y_frac + adjust_frac_y))
-                                self.canvas.yview_moveto(desired_y_frac)
-                                self.canvas.update_idletasks()
-                                new_y_view = self.canvas.yview()
-                                actual_y_frac = new_y_view[0] if len(new_y_view) > 1 else desired_y_frac
-                                actual_top = actual_y_frac * region_height
-                                delta_top = desired_top - actual_top
-                        
-                except Exception as e:
-                    print(f"⚠️  SCROLL ERROR: {e}")
-                    # Fallback: just use basic moveto
-                    self.canvas.xview_moveto(scroll_x_frac)
-                    self.canvas.yview_moveto(scroll_y_frac)
-
-    def double_click_zoom_out(self, event):
-        """Handle Ctrl+double-click zoom out (x0.5) centered at click location"""
-        # Debug: uncomment for troubleshooting
-        # print(f"🖱️  CTRL+DOUBLE CLICK ZOOM OUT at ({event.x}, {event.y})")
-        self._perform_centered_zoom(event, 0.5)
-        return "break"
 
     def start_pan(self, event):
         """Start panning with mouse"""
@@ -5511,10 +4953,6 @@ class ImageLabelTool:
         if not hasattr(self, 'all_image_paths') or not self.all_image_paths:
             messagebox.showwarning("No Images", "Please select a folder with images first.")
             return
-            
-        if not self.folder_path:
-            messagebox.showwarning("No Folder", "Please select a folder first.")
-            return
         
         # Dictionary to store session IDs by category
         sessions_by_category = {
@@ -5585,9 +5023,7 @@ class ImageLabelTool:
                     session_data[session_id]['classifications'].add(classification)
                     session_data[session_id]['images'].append({
                         'filename': filename,
-                        'classification': classification,
-                        'path': image_path,
-                        'false_noread': self.false_noread.get(image_path, False)
+                        'classification': classification
                     })
             
             # Apply hierarchy to determine final session classification
@@ -5596,7 +5032,6 @@ class ImageLabelTool:
                 'read failure': set(),
                 'incomplete': set(),
                 'unreadable': set(),
-                'FalseNoRead': set(),
                 'unlabeled': set()
             }
             
@@ -5604,8 +5039,7 @@ class ImageLabelTool:
                 classifications = data['classifications']
                 
                 # Use centralized session classification logic
-                image_paths_for_session = [img['path'] for img in data['images'] if 'path' in img]
-                final_classification = self.determine_session_classification(classifications, session_image_paths=image_paths_for_session)
+                final_classification = self.determine_session_classification(classifications)
                 final_sessions_by_category[final_classification].add(session_id)
             
             # Create timestamp for consistent file naming
@@ -5678,53 +5112,38 @@ class ImageLabelTool:
                     
                     # Check session logic
                     diag_file.write(f"\nSESSION CLASSIFICATION LOGIC (HIERARCHY):\n")
-                    diag_file.write("The session gets classified by the prioritized rule set:\n")
-                    diag_file.write("1. If any 'read failure' image is not marked False NoRead -> session 'read failure'\n")
-                    diag_file.write("2. Else if every classified image is a 'read failure' flagged False NoRead -> session 'FalseNoRead'\n")
-                    diag_file.write("3. Else if any image is 'unreadable' -> session 'unreadable'\n")
-                    diag_file.write("4. Else if any image is 'incomplete' -> session 'unreadable'\n")
-                    diag_file.write("5. Else if any image is 'no label' -> session 'no label'\n")
-                    diag_file.write("6. Otherwise -> session 'unlabeled'\n\n")
+                    diag_file.write("The session gets classified by the 'worst case' rule:\n")
+                    diag_file.write("1. If ANY image is 'unreadable' -> ENTIRE session is 'unreadable'\n")
+                    diag_file.write("2. Else if ANY image is 'read failure' -> ENTIRE session is 'read failure'\n")
+                    diag_file.write("3. Else if ANY image is 'incomplete' -> ENTIRE session is 'incomplete'\n")
+                    diag_file.write("4. Else if ANY image is 'no label' -> ENTIRE session is 'no label'\n")
+                    diag_file.write("5. Otherwise -> ENTIRE session is 'unlabeled'\n\n")
                     
                     # Use centralized session classification logic
                     all_classifications = [item['classification'] for item in session_142_diagnostics]
-                    all_paths = [item['full_path'] for item in session_142_diagnostics]
-                    expected_session_class = self.determine_session_classification(all_classifications, session_image_paths=all_paths)
+                    expected_session_class = self.determine_session_classification(all_classifications)
                     
                     # Determine reason based on classifications present
                     classifications_set = set(all_classifications)
                     has_unreadable = 'unreadable' in classifications_set
                     has_read_failure = 'read failure' in classifications_set
-                    has_read_failure_false = any(
-                        item['classification'] == 'read failure' and self.false_noread.get(item['full_path'], False)
-                        for item in session_142_diagnostics
-                    )
-                    has_read_failure_non_false = any(
-                        item['classification'] == 'read failure' and not self.false_noread.get(item['full_path'], False)
-                        for item in session_142_diagnostics
-                    )
                     has_incomplete = 'incomplete' in classifications_set
                     has_no_label = 'no label' in classifications_set
                     
-                    if expected_session_class == 'read failure':
-                        reason = "contains at least one 'read failure' image not marked False NoRead"
-                    elif expected_session_class == 'unreadable':
-                        if has_unreadable:
-                            reason = "contains at least one 'unreadable' image"
-                        else:
-                            reason = "contains an 'incomplete' image (treated as unreadable)"
-                    elif expected_session_class == 'FalseNoRead':
-                        reason = "all 'read failure' images are flagged False NoRead"
+                    if expected_session_class == 'unreadable':
+                        reason = "contains at least one 'unreadable' image (highest priority)"
+                    elif expected_session_class == 'read failure':
+                        reason = "contains at least one 'read failure' image (and no 'unreadable')"
+                    elif expected_session_class == 'incomplete':
+                        reason = "contains at least one 'incomplete' image (and no worse classifications)"
                     elif expected_session_class == 'no label':
-                        reason = "classified images are all 'no label'"
+                        reason = "contains at least one 'no label' image (and no worse classifications)"
                     else:
                         reason = "no classified images found"
                     
                     diag_file.write(f"ANALYSIS FOR SESSION 142:\n")
                     diag_file.write(f"- Has unreadable: {has_unreadable}\n")
                     diag_file.write(f"- Has read failure: {has_read_failure}\n")
-                    diag_file.write(f"  • With False NoRead: {has_read_failure_false}\n")
-                    diag_file.write(f"  • Without False NoRead: {has_read_failure_non_false}\n")
                     diag_file.write(f"- Has incomplete: {has_incomplete}\n")
                     diag_file.write(f"- Has no label: {has_no_label}\n\n")
                     
@@ -5782,7 +5201,7 @@ class ImageLabelTool:
         
         return None
 
-    def determine_session_classification(self, image_classifications, session_image_paths=None):
+    def determine_session_classification(self, image_classifications):
         """
         CENTRALIZED SESSION CLASSIFICATION LOGIC
         
@@ -5791,59 +5210,34 @@ class ImageLabelTool:
         
         Args:
             image_classifications: set or list of classification strings for images in the session
-            session_image_paths: optional list of image paths belonging to the session
             
         Returns:
             str: The final session classification
             
-    Hierarchy (worst to best):
-    1. 'read failure' (if the session has any read failure image NOT marked False NoRead)
-    2. 'FalseNoRead' (if every classified image is a read failure flagged False NoRead)
-    3. 'unreadable' (if any image is unreadable and there are no read failures)
-    4. 'unreadable' (if any image is incomplete and there are no read failures)
-    5. 'no label' (when all classified images are no label)
-    6. 'unlabeled' (when the session still has at least one unclassified image)
+        Hierarchy (worst to best):
+        1. 'read failure' (highest priority - if ANY image is read failure, session is read failure)
+        1. 'unreadable' (if ANY image is unreadable, session is unreadable)
+        3. 'incomplete' (if ANY image is incomplete, session is unreadable)
+        4. 'no label' (if ANY image is no label and no worse classifications)  
+        5. 'unlabeled' (default - no images have been classified)
         """
-        classifications_list = []
-        read_failure_flags = []  # Track False NoRead status for read failure images
-
-        if session_image_paths is not None:
-            for path in session_image_paths:
-                label = self.labels.get(path, '(Unclassified)')
-                if label == '(Unclassified)':
-                    continue
-                classifications_list.append(label)
-                if label == 'read failure':
-                    read_failure_flags.append(self.false_noread.get(path, False))
-        else:
-            if image_classifications:
-                for label in image_classifications:
-                    if label == '(Unclassified)':
-                        continue
-                    classifications_list.append(label)
-                    if label == 'read failure':
-                        # Without image paths, assume read failures are genuine (non False NoRead)
-                        read_failure_flags.append(False)
-
-        if not classifications_list:
+        if not image_classifications:
             return 'unlabeled'
+        
+        # Convert to set for efficient lookup
+        classifications_set = set(image_classifications)
 
-        classifications_set = set(classifications_list)
-        has_read_failure_non_false = any(not flag for flag in read_failure_flags)
-        has_read_failure_entries = bool(read_failure_flags)
-        all_read_failures_false = has_read_failure_entries and all(read_failure_flags)
-
-        if has_read_failure_non_false:
+        # Apply hierarchy - worst case wins
+        if 'read failure' in classifications_set:
             return 'read failure'
-        if has_read_failure_entries and all_read_failures_false:
-            return 'FalseNoRead'
-        if 'unreadable' in classifications_set:
+        elif 'unreadable' in classifications_set:
             return 'unreadable'
-        if 'incomplete' in classifications_set:
+        elif 'incomplete' in classifications_set:
             return 'unreadable'
-        if classifications_set and classifications_set.issubset({'no label'}):
+        elif 'no label' in classifications_set:
             return 'no label'
-        return 'unlabeled'
+        else:
+            return 'unlabeled'
 
 
     def diagnose_session_classification(self, target_session_id):
@@ -5880,8 +5274,7 @@ class ImageLabelTool:
         
         # Use centralized session classification logic
         all_classifications = [img['classification'] for img in session_images]
-        all_paths = [img['path'] for img in session_images]
-        expected_session_class = self.determine_session_classification(all_classifications, session_image_paths=all_paths)
+        expected_session_class = self.determine_session_classification(all_classifications)
         
         # Build diagnostic report
         report = f"=== SESSION {target_session_id} ANALYSIS ===\n"
@@ -6155,9 +5548,7 @@ class ImageLabelTool:
         
         # Disable other buttons
         self.btn_select.config(state='disabled')
-        btn_gen_no_read = getattr(self, 'btn_gen_no_read', None)
-        if btn_gen_no_read is not None:
-            btn_gen_no_read.config(state='disabled')
+        self.btn_gen_no_read.config(state='disabled')
         self.btn_1to1.config(state='disabled')
         self.btn_zoom_in.config(state='disabled')
         self.btn_zoom_out.config(state='disabled')
@@ -6166,9 +5557,7 @@ class ImageLabelTool:
         # self.auto_detect_checkbox.config(state='disabled')
         
         # Disable entry fields
-        total_parcels_entry = getattr(self, 'total_parcels_entry', None)
-        if total_parcels_entry is not None:
-            total_parcels_entry.config(state='disabled')
+        self.total_parcels_entry.config(state='disabled')
         # Note: auto_timer_entry is already disabled when timer is running
 
     def disable_ui_controls_for_monitoring(self):
@@ -6193,9 +5582,7 @@ class ImageLabelTool:
         
         # Enable other buttons
         self.btn_select.config(state='normal')
-        btn_gen_no_read = getattr(self, 'btn_gen_no_read', None)
-        if btn_gen_no_read is not None:
-            btn_gen_no_read.config(state='normal')
+        self.btn_gen_no_read.config(state='normal')
         self.btn_1to1.config(state='normal')
         self.btn_zoom_in.config(state='normal')
         self.btn_zoom_out.config(state='normal')
@@ -6204,9 +5591,7 @@ class ImageLabelTool:
         # self.auto_detect_checkbox.config(state='normal')
         
         # Enable entry fields
-        total_parcels_entry = getattr(self, 'total_parcels_entry', None)
-        if total_parcels_entry is not None:
-            total_parcels_entry.config(state='normal')
+        self.total_parcels_entry.config(state='normal')
 
     def enable_ui_controls_for_monitoring(self):
         """Re-enable folder selection after monitoring stops"""
